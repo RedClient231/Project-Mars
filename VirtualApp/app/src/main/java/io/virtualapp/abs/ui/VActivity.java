@@ -6,8 +6,6 @@ import android.support.annotation.IdRes;
 import android.support.v4.app.Fragment;
 import android.support.v7.app.AppCompatActivity;
 
-import com.flurry.android.FlurryAgent;
-
 import org.jdeferred.android.AndroidDeferredManager;
 
 import io.virtualapp.abs.BaseView;
@@ -46,12 +44,12 @@ public class VActivity extends AppCompatActivity {
     @Override
     protected void onStart() {
         super.onStart();
-        FlurryAgent.onStartSession(this);
+        // Flurry session tracking removed
     }
 
     @Override
     protected void onStop() {
         super.onStop();
-        FlurryAgent.onEndSession(this);
+        // Flurry session tracking removed
     }
 }
