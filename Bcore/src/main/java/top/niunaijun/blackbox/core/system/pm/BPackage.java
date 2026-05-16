@@ -45,6 +45,8 @@ public class BPackage implements Parcelable {
     public ApplicationInfo applicationInfo;
     public String mVersionName;
     public String baseCodePath;
+    public String[] splitNames;
+    public String[] splitCodePaths;
 
     public int mSharedUserLabel;
     
@@ -134,6 +136,8 @@ public class BPackage implements Parcelable {
         this.applicationInfo = aPackage.applicationInfo;
         this.mVersionName = aPackage.mVersionName;
         this.baseCodePath = aPackage.baseCodePath;
+        this.splitNames = aPackage.splitNames;
+        this.splitCodePaths = aPackage.splitCodePaths;
         this.mSharedUserLabel = aPackage.mSharedUserLabel;
         this.configPreferences = aPackage.configPreferences;
         this.reqFeatures = aPackage.reqFeatures;
@@ -224,6 +228,8 @@ public class BPackage implements Parcelable {
         this.applicationInfo = in.readParcelable(ApplicationInfo.class.getClassLoader());
         this.mVersionName = in.readString();
         this.baseCodePath = in.readString();
+        this.splitNames = in.createStringArray();
+        this.splitCodePaths = in.createStringArray();
         this.mSharedUserLabel = in.readInt();
         this.configPreferences = in.createTypedArrayList(ConfigurationInfo.CREATOR);
         this.reqFeatures = in.createTypedArrayList(FeatureInfo.CREATOR);
@@ -714,6 +720,8 @@ public class BPackage implements Parcelable {
         dest.writeParcelable(this.applicationInfo, flags);
         dest.writeString(this.mVersionName);
         dest.writeString(this.baseCodePath);
+        dest.writeStringArray(this.splitNames);
+        dest.writeStringArray(this.splitCodePaths);
         dest.writeInt(this.mSharedUserLabel);
         dest.writeTypedList(this.configPreferences);
         dest.writeTypedList(this.reqFeatures);

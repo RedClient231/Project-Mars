@@ -6,6 +6,7 @@ on:
     branches:
       - project-mars-newblackbox-base
       - feature/xapk-import
+      - feature/full-resource-split-xapk
 
 jobs:
   build:

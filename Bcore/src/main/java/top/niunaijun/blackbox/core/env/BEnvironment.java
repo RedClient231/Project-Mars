@@ -143,6 +143,14 @@ public class BEnvironment {
         return new File(getAppDir(packageName), "lib");
     }
 
+    public static File getSplitApkDir(String packageName) {
+        return new File(getAppDir(packageName), "split");
+    }
+
+    public static File getSplitApkFile(String packageName, String splitName) {
+        return new File(getSplitApkDir(packageName), splitName + ".apk");
+    }
+
     public static File getXSharedPreferences(String packageName, String prefFileName) {
        return new File(BEnvironment.getDataDir(packageName, BlackBoxCore.getUserId()), "shared_prefs/" + prefFileName + ".xml");
     }

@@ -78,10 +78,6 @@ object XapkInstaller {
                 }
 
                 val baseApks = apkEntries.filter { isBaseApkEntry(it) }
-                val abiSplits = apkEntries.filter { isAbiSplitEntry(it) }
-                val unsupportedSplits = apkEntries.filter {
-                    !isBaseApkEntry(it) && !isAbiSplitEntry(it)
-                }
 
                 if (baseApks.size != 1) {
                     val apkNames = apkEntries.joinToString(", ") { it.name }
@@ -91,42 +87,44 @@ object XapkInstaller {
                     )
                 }
 
-                if (unsupportedSplits.isNotEmpty()) {
-                    val splitNames = unsupportedSplits.joinToString(", ") { it.name }
-                    Log.w(TAG, "Unsupported split APKs detected: $splitNames")
-                    return Result(
-                        false,
-                        message = "Resource/language/density split APK detected ($splitNames). " +
-                                "ABI-only split XAPK is supported, but full split APK " +
-                                "resource support is not implemented yet."
-                    )
-                }
-
                 val baseApkEntry = baseApks.first()
-                val baseApkFile = File(workDir, "base.apk")
+                val splitEntries = apkEntries.filter { !isBaseApkEntry(it) }
+
+                // Create install-set directory where base + splits live side by side.
+                // Bcore will detect sibling split APKs in the same directory.
+                val installSetDir = File(workDir, "install-set")
+                installSetDir.mkdirs()
+
+                // Extract base APK
+                val baseApkFile = File(installSetDir, "base.apk")
                 extractEntry(zipFile, baseApkEntry, baseApkFile)
                 Log.d(TAG, "Extracted base APK: ${baseApkEntry.name} (${baseApkEntry.size} bytes)")
 
-                val installResult = if (abiSplits.isEmpty()) {
+                // Determine if we have ABI splits for native lib extraction
+                val abiSplits = splitEntries.filter { isAbiSplitEntry(it) }
+                val hasAbiSplits = abiSplits.isNotEmpty()
+                val selectedAbiSplit = if (hasAbiSplits) chooseBestAbiSplit(abiSplits) else null
+
+                // Extract ALL split APKs (ABI + resource + density + language) to install-set dir.
+                // Bcore will detect them as sibling splits and copy them into virtual storage.
+                for ((index, splitEntry) in splitEntries.withIndex()) {
+                    // Use safe filename: sanitize the entry name
+                    val safeName = splitEntry.name.replace("/", "_")
+                    val splitFile = File(installSetDir, safeName)
+                    extractEntry(zipFile, splitEntry, splitFile)
+                    Log.d(TAG, "Extracted split APK: ${splitEntry.name} -> $safeName (${splitEntry.size} bytes)")
+                }
+
+                // Install the base APK. Bcore's BPackageManagerService will detect
+                // sibling split APKs in the same directory and attach them automatically.
+                val installResult = if (splitEntries.isEmpty()) {
+                    // Single APK XAPK -- install normally
                     Log.d(TAG, "Single APK XAPK -- installing normally")
                     BlackBoxCore.get().installPackageAsUser(baseApkFile, userId)
                 } else {
-                    val splitNames = abiSplits.joinToString(", ") { it.name }
-                    Log.d(TAG, "ABI split XAPK detected -- splits: $splitNames")
-
-                    val selectedSplit = chooseBestAbiSplit(abiSplits)
-                        ?: return Result(
-                            false,
-                            message = "XAPK contains ABI splits ($splitNames) but none " +
-                                    "match this device's supported ABIs " +
-                                    "(${Build.SUPPORTED_ABIS.joinToString(", ")}). " +
-                                    "This device may not support the native architecture " +
-                                    "required by this app."
-                        )
-
-                    val selectedAbi = extractAbiFromSplitName(selectedSplit.name)!!
-                    Log.d(TAG, "Selected ABI split: ${selectedSplit.name} -> $selectedAbi")
-
+                    // Multi-APK XAPK -- install with skipAbiCheck because base APK
+                    // may have no native libs (they're in the ABI split)
+                    Log.d(TAG, "Multi-APK XAPK with ${splitEntries.size} split(s) -- installing with split support")
                     BlackBoxCore.getBPackageManager().installPackageAsUser(
                         baseApkFile.absolutePath,
                         InstallOption.installByStorage().skipAbiCheck(),
@@ -144,23 +142,31 @@ object XapkInstaller {
                 val packageName = installResult.packageName
                 Log.d(TAG, "Base APK installed successfully: $packageName")
 
+                // For ABI splits, also extract native libs manually to the virtual lib dir.
+                // This is needed because the CopyExecutor's NativeUtils.copyNativeLib only
+                // processes the base APK + split APKs after they are copied into virtual storage.
+                // But the ABI detection in NativeUtils uses Build.CPU_ABI which may not match
+                // the split APK's lib directory structure. So we do it explicitly here too.
                 var copiedLibCount = 0
-                if (abiSplits.isNotEmpty()) {
-                    val selectedSplit = chooseBestAbiSplit(abiSplits)!!
-                    val selectedAbi = extractAbiFromSplitName(selectedSplit.name)!!
+                if (selectedAbiSplit != null) {
+                    val selectedAbi = extractAbiFromSplitName(selectedAbiSplit.name)!!
+                    Log.d(TAG, "Selected ABI split: ${selectedAbiSplit.name} -> $selectedAbi")
 
-                    val splitApkFile = File(workDir, selectedSplit.name.replace("/", "_"))
-                    extractEntry(zipFile, selectedSplit, splitApkFile)
-
+                    val safeName = selectedAbiSplit.name.replace("/", "_")
+                    val splitApkFile = File(installSetDir, safeName)
                     copiedLibCount = copyNativeLibsFromSplit(splitApkFile, packageName, selectedAbi)
-                    Log.d(TAG, "Copied $copiedLibCount native libs from ${selectedSplit.name} for package $packageName")
+                    Log.d(TAG, "Copied $copiedLibCount native libs from ${selectedAbiSplit.name} for package $packageName")
                 }
 
                 val copiedObbCount = copyObbEntries(zipFile, packageName, userId)
                 Log.d(TAG, "OBB files copied: $copiedObbCount for package: $packageName")
 
                 var resultMsg = "XAPK installed successfully. Package: $packageName."
-                if (abiSplits.isNotEmpty()) {
+                if (splitEntries.isNotEmpty()) {
+                    val splitNames = splitEntries.joinToString(", ") { it.name }
+                    resultMsg += " Split APKs: $splitNames."
+                }
+                if (copiedLibCount > 0) {
                     resultMsg += " ABI split native libs copied: $copiedLibCount."
                 }
                 resultMsg += " OBB files copied: $copiedObbCount."

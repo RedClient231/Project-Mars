@@ -304,6 +304,13 @@ public class PackageManagerCompat {
         ai.processName = BPackageManagerService.fixProcessName(p.packageName, ai.packageName);
         ai.publicSourceDir = sourceDir;
         ai.sourceDir = sourceDir;
+
+        // Expose split APK paths for resource/density/language/ABI splits
+        if (p.splitCodePaths != null && p.splitCodePaths.length > 0) {
+            ai.splitSourceDirs = p.splitCodePaths;
+            ai.splitPublicSourceDirs = p.splitCodePaths;
+        }
+
         ai.uid = p.mExtras.appId;
 
 
@@ -369,6 +376,14 @@ public class PackageManagerCompat {
         if (ps != null) {
             AssetManager assets = BRAssetManager.get()._new();
             BRAssetManager.get(assets).addAssetPath(ps.pkg.baseCodePath);
+            // Add split APK asset paths for resource/density/language/ABI splits
+            if (ps.pkg.splitCodePaths != null) {
+                for (String splitCodePath : ps.pkg.splitCodePaths) {
+                    if (splitCodePath != null) {
+                        BRAssetManager.get(assets).addAssetPath(splitCodePath);
+                    }
+                }
+            }
             Resources hostRes = context.getResources();
             return new Resources(assets, hostRes.getDisplayMetrics(), hostRes.getConfiguration());
         }

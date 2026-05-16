@@ -19,8 +19,10 @@ import android.os.RemoteException;
 import android.text.TextUtils;
 
 import java.io.File;
+import java.io.FilenameFilter;
 import java.io.InputStream;
 import java.util.ArrayList;
+import java.util.Arrays;
 import java.util.Collection;
 import java.util.Collections;
 import java.util.List;
@@ -696,6 +698,15 @@ public class BPackageManagerService extends IBPackageManagerService.Stub impleme
             if (aPackage == null) {
                 return result.installError("parser apk error.");
             }
+
+            // Detect sibling split APKs in the same directory as the base APK
+            File[] splitApkFiles = findSiblingSplitApks(apkFile);
+            if (splitApkFiles != null && splitApkFiles.length > 0) {
+                Slog.d(TAG, "Detected " + splitApkFiles.length + " sibling split APK(s) alongside base APK");
+                aPackage.splitNames = deriveSplitNames(splitApkFiles);
+                aPackage.splitCodePaths = deriveSplitPaths(splitApkFiles);
+            }
+
             result.packageName = aPackage.packageName;
 
             if (option.isFlag(InstallOption.FLAG_SYSTEM)) {
@@ -811,5 +822,61 @@ public class BPackageManagerService extends IBPackageManagerService.Stub impleme
             mComponentResolver.removeAllComponents(value.pkg);
             mComponentResolver.addAllComponents(value.pkg);
         }
+    }
+
+    /**
+     * Find sibling split APKs in the same directory as the base APK.
+     * Splits are APK files that are not the base APK itself, preferring
+     * filenames starting with "config." or "split_config.".
+     */
+    private File[] findSiblingSplitApks(File baseApk) {
+        File parent = baseApk.getParentFile();
+        if (parent == null || !parent.exists()) {
+            return null;
+        }
+
+        File[] siblings = parent.listFiles(new FilenameFilter() {
+            @Override
+            public boolean accept(File dir, String name) {
+                if (!name.endsWith(".apk")) return false;
+                // Not the base APK itself
+                if (new File(dir, name).equals(baseApk)) return false;
+                return true;
+            }
+        });
+
+        if (siblings == null || siblings.length == 0) {
+            return null;
+        }
+
+        // Sort for stable order
+        Arrays.sort(siblings);
+        return siblings;
+    }
+
+    /**
+     * Derive split names from split APK files.
+     * For config.en.apk -> "config.en"
+     * For split_config.arm64_v8a.apk -> "split_config.arm64_v8a"
+     * For any other .apk -> filename without .apk extension
+     */
+    private String[] deriveSplitNames(File[] splitFiles) {
+        String[] names = new String[splitFiles.length];
+        for (int i = 0; i < splitFiles.length; i++) {
+            String fname = splitFiles[i].getName();
+            names[i] = fname.endsWith(".apk") ? fname.substring(0, fname.length() - 4) : fname;
+        }
+        return names;
+    }
+
+    /**
+     * Derive split code paths (absolute paths) from split APK files.
+     */
+    private String[] deriveSplitPaths(File[] splitFiles) {
+        String[] paths = new String[splitFiles.length];
+        for (int i = 0; i < splitFiles.length; i++) {
+            paths[i] = splitFiles[i].getAbsolutePath();
+        }
+        return paths;
     }
 }
