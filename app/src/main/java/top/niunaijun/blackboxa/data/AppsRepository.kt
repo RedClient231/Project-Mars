@@ -9,6 +9,7 @@ import java.io.File
 import top.niunaijun.blackbox.BlackBoxCore
 import top.niunaijun.blackbox.utils.AbiUtils
 import top.niunaijun.blackboxa.R
+import top.niunaijun.blackboxa.app.App
 import top.niunaijun.blackboxa.app.AppManager
 import top.niunaijun.blackboxa.bean.AppInfo
 import top.niunaijun.blackboxa.bean.InstalledAppBean
@@ -359,6 +360,20 @@ class AppsRepository {
 
     fun installApk(source: String, userId: Int, resultLiveData: MutableLiveData<String>) {
         try {
+            // Check if source is an XAPK file — if so, route to XapkInstaller
+            if (XapkInstaller.isXapkSource(App.getContext(), source)) {
+                val xapkResult = XapkInstaller.installXapk(App.getContext(), source, userId)
+                if (xapkResult.success) {
+                    xapkResult.packageName?.let { updateAppSortList(userId, it, true) }
+                    resultLiveData.postValue(xapkResult.message)
+                } else {
+                    resultLiveData.postValue(xapkResult.message)
+                }
+                scanUser()
+                return
+            }
+
+            // Existing APK install path below (unchanged)
             
             if (source.contains("blackbox") ||
                             source.contains("niunaijun") ||

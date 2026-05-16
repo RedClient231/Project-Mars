@@ -105,8 +105,8 @@ class ListActivity : BaseActivity() {
     }
 
     private val openDocumentedResult =
-            registerForActivityResult(ActivityResultContracts.GetContent()) {
-                it?.run { finishWithResult(it.toString()) }
+            registerForActivityResult(ActivityResultContracts.GetContent()) { uri ->
+                uri?.run { finishWithResult(it.toString()) }
             }
 
     private fun finishWithResult(source: String) {
@@ -127,7 +127,7 @@ class ListActivity : BaseActivity() {
 
     override fun onOptionsItemSelected(item: MenuItem): Boolean {
         if (item.itemId == R.id.list_choose) {
-            openDocumentedResult.launch("application/vnd.android.package-archive")
+            openDocumentedResult.launch("*/*")
         }
         return true
     }
