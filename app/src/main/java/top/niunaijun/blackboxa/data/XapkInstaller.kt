@@ -89,9 +89,9 @@ object XapkInstaller {
      * Installs an XAPK file into the virtual environment.
      *
      * Classification logic:
-     * - Exactly one APK → single APK + OBB path (existing behavior)
-     * - One base APK + ABI splits only → ABI split install path
-     * - Any non-ABI split APKs present → rejected with clear message
+     * - Exactly one APK -> single APK + OBB path (existing behavior)
+     * - One base APK + ABI splits only -> ABI split install path
+     * - Any non-ABI split APKs present -> rejected with clear message
      */
     fun installXapk(context: Context, source: String, userId: Int): Result {
         val workDir = File(context.cacheDir, "xapk-${UUID.randomUUID()}")
@@ -146,15 +146,15 @@ object XapkInstaller {
                 extractEntry(zipFile, baseApkEntry, baseApkFile)
                 Log.d(TAG, "Extracted base APK: ${baseApkEntry.name} (${baseApkEntry.size} bytes)")
 
-                // Step: Install base APK — choose path based on whether ABI splits exist
+                // Step: Install base APK -- choose path based on whether ABI splits exist
                 val installResult = if (abiSplits.isEmpty()) {
                     // Single APK + OBB path (existing behavior)
-                    Log.d(TAG, "Single APK XAPK — installing normally")
+                    Log.d(TAG, "Single APK XAPK -- installing normally")
                     BlackBoxCore.get().installPackageAsUser(baseApkFile, userId)
                 } else {
-                    // ABI split path — skip ABI check on base APK
+                    // ABI split path -- skip ABI check on base APK
                     val splitNames = abiSplits.joinToString(", ") { it.name }
-                    Log.d(TAG, "ABI split XAPK detected — splits: $splitNames")
+                    Log.d(TAG, "ABI split XAPK detected -- splits: $splitNames")
 
                     // Select the best ABI split for this device
                     val selectedSplit = chooseBestAbiSplit(abiSplits)
@@ -208,11 +208,11 @@ object XapkInstaller {
                 Log.d(TAG, "OBB files copied: $copiedObbCount for package: $packageName")
 
                 // Build result message
-                val resultMsg = StringBuilder()
-                    .append("XAPK installed successfully. Package: $packageName.")
-                    .apply { if (abiSplits.isNotEmpty()) append(" ABI split native libs copied: $copiedLibCount.") }
-                    .append(" OBB files copied: $copiedObbCount.")
-                    .toString()
+                var resultMsg = "XAPK installed successfully. Package: $packageName."
+                if (abiSplits.isNotEmpty()) {
+                    resultMsg += " ABI split native libs copied: $copiedLibCount."
+                }
+                resultMsg += " OBB files copied: $copiedObbCount."
 
                 Result(true, packageName, resultMsg)
             }
