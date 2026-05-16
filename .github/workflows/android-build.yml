@@ -1,0 +1,46 @@
+name: Build Project Mars APK
+
+on:
+  workflow_dispatch:
+  push:
+    branches:
+      - project-jet-virtualapp-base
+
+jobs:
+  build:
+    runs-on: ubuntu-20.04
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Set up Java 8
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '8'
+
+      - name: Set up Android SDK
+        uses: android-actions/setup-android@v3
+
+      - name: Install required Android SDK packages
+        run: |
+          yes | sdkmanager --licenses
+          sdkmanager \
+            "platform-tools" \
+            "platforms;android-26" \
+            "build-tools;26.0.2" \
+            "ndk;16.1.4479499"
+
+      - name: Make Gradle wrapper executable
+        run: chmod +x ./VirtualApp/gradlew
+
+      - name: Build debug APK
+        working-directory: ./VirtualApp
+        run: ./gradlew :app:assembleDebug --no-daemon
+
+      - name: Upload debug APK
+        uses: actions/upload-artifact@v4
+        with:
+          name: Project-Mars-debug-apk
+          path: VirtualApp/app/build/outputs/apk/debug/*.apk
