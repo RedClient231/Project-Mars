@@ -208,15 +208,13 @@ object XapkInstaller {
                 Log.d(TAG, "OBB files copied: $copiedObbCount for package: $packageName")
 
                 // Build result message
-                val message = buildString {
-                    append("XAPK installed successfully. Package: $packageName.")
-                    if (abiSplits.isNotEmpty()) {
-                        append(" ABI split native libs copied: $copiedLibCount.")
-                    }
-                    append(" OBB files copied: $copiedObbCount.")
-                }
+                val resultMsg = StringBuilder()
+                    .append("XAPK installed successfully. Package: $packageName.")
+                    .apply { if (abiSplits.isNotEmpty()) append(" ABI split native libs copied: $copiedLibCount.") }
+                    .append(" OBB files copied: $copiedObbCount.")
+                    .toString()
 
-                Result(true, packageName, message)
+                Result(true, packageName, resultMsg)
             }
         } catch (t: Throwable) {
             Log.e(TAG, "XAPK install failed", t)
