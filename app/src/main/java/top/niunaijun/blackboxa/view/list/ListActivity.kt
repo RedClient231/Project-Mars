@@ -106,7 +106,7 @@ class ListActivity : BaseActivity() {
 
     private val openDocumentedResult =
             registerForActivityResult(ActivityResultContracts.GetContent()) { uri ->
-                uri?.run { finishWithResult(it.toString()) }
+                uri?.let { finishWithResult(it.toString()) }
             }
 
     private fun finishWithResult(source: String) {
