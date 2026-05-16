@@ -33,12 +33,14 @@ jobs:
             "extras;android;m2repository" \
             "extras;google;m2repository"
 
-      - name: Install NDK r16b
+      - name: Install NDK r16b and libncurses5
         run: |
           # NDK r16b is not in sdkmanager catalog, download manually
           curl -fsSL "https://dl.google.com/android/repository/android-ndk-r16b-linux-x86_64.zip" -o /tmp/ndk-r16b.zip
           unzip -q /tmp/ndk-r16b.zip -d /tmp/ndk-r16b
           mv /tmp/ndk-r16b/android-ndk-r16b $ANDROID_HOME/ndk/16.1.4479499
+          # NDK r16b's clang++ requires libncurses.so.5 (not available on ubuntu 24.04+)
+          sudo apt-get update -qq && sudo apt-get install -y -qq libncurses5
 
       - name: Patch SDK platform package.xml
         # AGP 3.0.1 fails parsing <base-extension> tag in newer platform XMLs
