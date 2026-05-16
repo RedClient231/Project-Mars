@@ -683,10 +683,14 @@ public class BPackageManagerService extends IBPackageManagerService.Stub impleme
             }
 
             boolean support = AbiUtils.isSupport(apkFile);
-            if (!support) {
-                String msg = packageArchiveInfo.applicationInfo.loadLabel(BlackBoxCore.getPackageManager()) + "[" + packageArchiveInfo.packageName + "]";
-                return result.installError(packageArchiveInfo.packageName,
-                        msg + "\n" + (BlackBoxCore.is64Bit() ? "The box does not support 32-bit Application" : "The box does not support 64-bit Application"));
+            if (!option.isFlag(InstallOption.FLAG_SKIP_ABI_CHECK)) {
+                if (!support) {
+                    String msg = packageArchiveInfo.applicationInfo.loadLabel(BlackBoxCore.getPackageManager()) + "[" + packageArchiveInfo.packageName + "]";
+                    return result.installError(packageArchiveInfo.packageName,
+                            msg + "\n" + (BlackBoxCore.is64Bit() ? "The box does not support 32-bit Application" : "The box does not support 64-bit Application"));
+                }
+            } else {
+                Slog.d(TAG, "Skipping ABI check for split-XAPK base APK: " + apkFile.getAbsolutePath());
             }
             PackageParser.Package aPackage = parserApk(apkFile.getAbsolutePath());
             if (aPackage == null) {

@@ -10,6 +10,8 @@ public class InstallOption implements Parcelable {
 
     public static final int FLAG_URI_FILE = 1 << 3;
 
+    public static final int FLAG_SKIP_ABI_CHECK = 1 << 4;
+
     public int flags = 0;
 
     public static InstallOption installBySystem() {
@@ -28,6 +30,11 @@ public class InstallOption implements Parcelable {
 
     public InstallOption makeUriFile() {
         this.flags |= FLAG_URI_FILE;
+        return this;
+    }
+
+    public InstallOption skipAbiCheck() {
+        this.flags |= FLAG_SKIP_ABI_CHECK;
         return this;
     }
 
