@@ -5,6 +5,7 @@ on:
   push:
     branches:
       - project-mars-newblackbox-base
+      - feature/xapk-import
 
 jobs:
   build:
