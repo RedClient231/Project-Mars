@@ -306,7 +306,7 @@ public class GmsCore {
             if (hostInstalled && hostAppInfo != null) {
                 sb.append("    sourceDir: ").append(hostAppInfo.sourceDir).append("\n");
                 sb.append("    versionName: ").append(hostPkgInfo != null ? hostPkgInfo.versionName : "unknown").append("\n");
-                sb.append("    versionCode: ").append(hostPkgInfo != null ? hostPkgInfo.longVersionCode : "unknown").append("\n");
+                sb.append("    versionCode: ").append(hostPkgInfo != null ? hostPkgInfo.versionCode : "unknown").append("\n");
                 sb.append("    splitSourceDirs: ").append(hostAppInfo.splitSourceDirs != null ? Arrays.toString(hostAppInfo.splitSourceDirs) : "none").append("\n");
                 sb.append("    nativeLibraryDir: ").append(hostAppInfo.nativeLibraryDir).append("\n");
                 sb.append("    hasArm64: ").append(detectArm64(hostAppInfo)).append("\n");
@@ -334,7 +334,7 @@ public class GmsCore {
                     PackageInfo virtualPkgInfo = BlackBoxCore.getBPackageManager().getPackageInfo(pkg, 0, userId);
                     if (virtualPkgInfo != null) {
                         sb.append("    versionName: ").append(virtualPkgInfo.versionName).append("\n");
-                        sb.append("    versionCode: ").append(virtualPkgInfo.longVersionCode).append("\n");
+                        sb.append("    versionCode: ").append(virtualPkgInfo.versionCode).append("\n");
                     }
                 } catch (Exception e) {
                     sb.append("    versionName: unknown\n");
