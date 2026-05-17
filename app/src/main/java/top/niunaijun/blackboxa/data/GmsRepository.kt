@@ -6,6 +6,7 @@ import android.util.Log
 import androidx.lifecycle.MutableLiveData
 import top.niunaijun.blackbox.BlackBoxCore
 import top.niunaijun.blackbox.core.GmsCore
+import top.niunaijun.blackbox.core.GoogleRuntimeEventLogger
 import top.niunaijun.blackboxa.R
 import top.niunaijun.blackboxa.app.AppManager
 import top.niunaijun.blackboxa.bean.GmsBean
@@ -79,6 +80,83 @@ class GmsRepository {
         val diagnosticInfo = GmsCore.getGmsDiagnosticInfo(userId)
         val readinessReport = GmsCore.getGameLoginReadinessReport(userId)
         return diagnosticInfo + "\n" + readinessReport
+    }
+
+    /**
+     * Get AccountManager diagnostic info.
+     * Reports accounts, Google accounts, authenticator types, and Google authenticator availability.
+     */
+    fun getAccountDiagnostic(): String {
+        return GmsCore.getAccountDiagnostic()
+    }
+
+    /**
+     * Perform a Play Games launch test.
+     * Returns the result for UI display.
+     */
+    fun testPlayGamesLaunch(userId: Int): GmsCore.LaunchTestResult {
+        return GmsCore.testPlayGamesLaunch(userId)
+    }
+
+    /**
+     * Get the last Play Games launch test result as a formatted string.
+     */
+    fun getLastLaunchTestReport(): String {
+        val result = GmsCore.getLastLaunchTestResult()
+        return result?.toReportString() ?: "No launch test has been performed yet."
+    }
+
+    /**
+     * Get provider diagnostic info for Google packages.
+     */
+    fun getProviderDiagnostic(userId: Int): String {
+        return GmsCore.getProviderDiagnostic(userId)
+    }
+
+    /**
+     * Get service diagnostic info for Google packages.
+     */
+    fun getServiceDiagnostic(userId: Int): String {
+        return GmsCore.getServiceDiagnostic(userId)
+    }
+
+    /**
+     * Get the Google runtime events log.
+     */
+    fun getRuntimeEventsLog(): String {
+        return GoogleRuntimeEventLogger.getEventsLog()
+    }
+
+    /**
+     * Get a comprehensive runtime diagnostic that combines all runtime diagnostics.
+     */
+    fun getComprehensiveRuntimeDiagnostic(userId: Int): String {
+        val sb = StringBuilder()
+
+        sb.append(GmsCore.getAccountDiagnostic())
+        sb.append("\n\n")
+
+        sb.append(GmsCore.getProviderDiagnostic(userId))
+        sb.append("\n\n")
+
+        sb.append(GmsCore.getServiceDiagnostic(userId))
+        sb.append("\n\n")
+
+        sb.append(GoogleRuntimeEventLogger.getEventsLog())
+        sb.append("\n\n")
+
+        // Include last launch test result if available
+        val launchResult = GmsCore.getLastLaunchTestResult()
+        if (launchResult != null) {
+            sb.append(launchResult.toReportString())
+        } else {
+            sb.append("=== Play Games Launch Test ===\n")
+            sb.append("No launch test has been performed yet.\n")
+            sb.append("Use 'Test Launch Play Games' button first.\n")
+            sb.append("\n=== End of Launch Test ===\n")
+        }
+
+        return sb.toString()
     }
 
     /**

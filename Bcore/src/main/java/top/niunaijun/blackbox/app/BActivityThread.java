@@ -63,6 +63,7 @@ import top.niunaijun.blackbox.BlackBoxCore;
 import top.niunaijun.blackbox.app.configuration.AppLifecycleCallback;
 import top.niunaijun.blackbox.app.dispatcher.AppServiceDispatcher;
 import top.niunaijun.blackbox.core.CrashHandler;
+import top.niunaijun.blackbox.core.GoogleRuntimeEventLogger;
 import top.niunaijun.blackbox.core.IBActivityThread;
 import top.niunaijun.blackbox.core.IOCore;
 import top.niunaijun.blackbox.core.NativeCore;
@@ -1154,18 +1155,27 @@ public class BActivityThread extends IBActivityThread.Stub {
     }
 
     private void onBeforeCreateApplication(String packageName, String processName, Context context) {
+        // Log Google package lifecycle events for diagnostics
+        GoogleRuntimeEventLogger.logEvent(packageName, "beforeCreateApplication",
+                processName, BActivityThread.getUserId(), "");
         for (AppLifecycleCallback appLifecycleCallback : BlackBoxCore.get().getAppLifecycleCallbacks()) {
             appLifecycleCallback.beforeCreateApplication(packageName, processName, context, BActivityThread.getUserId());
         }
     }
 
     private void onBeforeApplicationOnCreate(String packageName, String processName, Application application) {
+        // Log Google package lifecycle events for diagnostics
+        GoogleRuntimeEventLogger.logEvent(packageName, "beforeApplicationOnCreate",
+                processName, BActivityThread.getUserId(), "");
         for (AppLifecycleCallback appLifecycleCallback : BlackBoxCore.get().getAppLifecycleCallbacks()) {
             appLifecycleCallback.beforeApplicationOnCreate(packageName, processName, application, BActivityThread.getUserId());
         }
     }
 
     private void onAfterApplicationOnCreate(String packageName, String processName, Application application) {
+        // Log Google package lifecycle events for diagnostics
+        GoogleRuntimeEventLogger.logEvent(packageName, "afterApplicationOnCreate",
+                processName, BActivityThread.getUserId(), "");
         for (AppLifecycleCallback appLifecycleCallback : BlackBoxCore.get().getAppLifecycleCallbacks()) {
             appLifecycleCallback.afterApplicationOnCreate(packageName, processName, application, BActivityThread.getUserId());
         }

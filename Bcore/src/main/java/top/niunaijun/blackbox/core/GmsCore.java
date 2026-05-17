@@ -1,10 +1,20 @@
 package top.niunaijun.blackbox.core;
 
+import android.accounts.Account;
+import android.accounts.AccountManager;
+import android.accounts.AuthenticatorDescription;
+import android.content.ComponentName;
+import android.content.Context;
+import android.content.Intent;
 import android.content.pm.ApplicationInfo;
 import android.content.pm.PackageInfo;
 import android.content.pm.PackageManager;
+import android.content.pm.ProviderInfo;
+import android.content.pm.ResolveInfo;
+import android.content.pm.ServiceInfo;
 import android.os.Build;
 
+import java.io.File;
 import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.HashSet;
@@ -309,6 +319,7 @@ public class GmsCore {
                 sb.append("    versionCode: ").append(hostPkgInfo != null ? hostPkgInfo.versionCode : "unknown").append("\n");
                 sb.append("    splitSourceDirs: ").append(hostAppInfo.splitSourceDirs != null ? Arrays.toString(hostAppInfo.splitSourceDirs) : "none").append("\n");
                 sb.append("    nativeLibraryDir: ").append(hostAppInfo.nativeLibraryDir).append("\n");
+                sb.append("    nativeLibFiles: ").append(listNativeLibFiles(hostAppInfo.nativeLibraryDir)).append("\n");
                 sb.append("    hasArm64: ").append(detectArm64(hostAppInfo)).append("\n");
                 sb.append("    hasArmv7: ").append(detectArmv7(hostAppInfo)).append("\n");
             }
@@ -323,6 +334,9 @@ public class GmsCore {
                     if (virtualAppInfo != null) {
                         sb.append("    sourceDir: ").append(virtualAppInfo.sourceDir).append("\n");
                         sb.append("    nativeLibraryDir: ").append(virtualAppInfo.nativeLibraryDir).append("\n");
+                        sb.append("    nativeLibDirExists: ").append(virtualAppInfo.nativeLibraryDir != null && new File(virtualAppInfo.nativeLibraryDir).exists()).append("\n");
+                        sb.append("    nativeLibFiles: ").append(listNativeLibFiles(virtualAppInfo.nativeLibraryDir)).append("\n");
+                        sb.append("    nativeLibCount: ").append(countNativeLibFiles(virtualAppInfo.nativeLibraryDir)).append("\n");
                         sb.append("    splitSourceDirs: ").append(virtualAppInfo.splitSourceDirs != null ? Arrays.toString(virtualAppInfo.splitSourceDirs) : "none").append("\n");
                         sb.append("    hasArm64: ").append(detectArm64(virtualAppInfo)).append("\n");
                         sb.append("    hasArmv7: ").append(detectArmv7(virtualAppInfo)).append("\n");
@@ -346,6 +360,549 @@ public class GmsCore {
         }
 
         sb.append("=== End of Diagnostic Report ===");
+        return sb.toString();
+    }
+
+    // ======================== Native Library Diagnostics ========================
+
+    /**
+     * List .so files in the given nativeLibraryDir.
+     * Returns a formatted string like [lib1.so, lib2.so] or [] if empty/missing.
+     */
+    private static String listNativeLibFiles(String nativeLibraryDir) {
+        if (nativeLibraryDir == null || nativeLibraryDir.isEmpty()) {
+            return "[]";
+        }
+        File dir = new File(nativeLibraryDir);
+        if (!dir.exists() || !dir.isDirectory()) {
+            return "[] (dir does not exist)";
+        }
+        String[] files = dir.list((dir1, name) -> name.endsWith(".so"));
+        if (files == null || files.length == 0) {
+            return "[] (empty)";
+        }
+        // Sort for consistent output
+        Arrays.sort(files);
+        // Limit to first 30 to avoid huge output
+        if (files.length > 30) {
+            String[] subset = new String[30];
+            System.arraycopy(files, 0, subset, 0, 30);
+            return Arrays.toString(subset) + " ... (" + files.length + " total)";
+        }
+        return Arrays.toString(files);
+    }
+
+    /**
+     * Count .so files in the given nativeLibraryDir.
+     */
+    private static int countNativeLibFiles(String nativeLibraryDir) {
+        if (nativeLibraryDir == null || nativeLibraryDir.isEmpty()) {
+            return 0;
+        }
+        File dir = new File(nativeLibraryDir);
+        if (!dir.exists() || !dir.isDirectory()) {
+            return 0;
+        }
+        String[] files = dir.list((dir1, name) -> name.endsWith(".so"));
+        return files != null ? files.length : 0;
+    }
+
+    // ======================== Account Diagnostics ========================
+
+    /**
+     * Get AccountManager diagnostic info from the host device.
+     * Reports accounts, Google accounts, authenticator types, and Google authenticator availability.
+     * This is critical for diagnosing Play Games login hangs.
+     *
+     * NOTE: This queries the HOST AccountManager, not the virtual one.
+     * The virtual AccountManager behavior depends on GoogleAccountManagerProxy,
+     * but whether Google's authenticator can even run depends on whether GMS
+     * services are properly resolved inside the virtual space.
+     */
+    public static String getAccountDiagnostic() {
+        StringBuilder sb = new StringBuilder();
+        sb.append("=== Account Diagnostic ===\n");
+        sb.append("(Queried from host AccountManager)\n\n");
+
+        try {
+            Context context = BlackBoxCore.getContext();
+            if (context == null) {
+                sb.append("ERROR: BlackBoxCore context is null\n");
+                return sb.toString();
+            }
+
+            AccountManager am = AccountManager.get(context);
+            if (am == null) {
+                sb.append("ERROR: AccountManager is null\n");
+                return sb.toString();
+            }
+
+            // All accounts
+            Account[] allAccounts = am.getAccounts();
+            sb.append("allAccountsCount: ").append(allAccounts != null ? allAccounts.length : 0).append("\n");
+
+            // Google accounts
+            Account[] googleAccounts = am.getAccountsByType("com.google");
+            sb.append("googleAccountsCount: ").append(googleAccounts != null ? googleAccounts.length : 0).append("\n");
+
+            if (googleAccounts != null && googleAccounts.length > 0) {
+                // Mask email addresses for privacy
+                StringBuilder maskedEmails = new StringBuilder();
+                for (Account account : googleAccounts) {
+                    if (maskedEmails.length() > 0) maskedEmails.append(", ");
+                    maskedEmails.append(maskEmail(account.name));
+                }
+                sb.append("googleAccounts: [").append(maskedEmails).append("]\n");
+            }
+
+            // Authenticator types
+            AuthenticatorDescription[] authTypes = am.getAuthenticatorTypes();
+            sb.append("authenticatorTypesCount: ").append(authTypes != null ? authTypes.length : 0).append("\n");
+
+            boolean hasGoogleAuthenticator = false;
+            if (authTypes != null) {
+                StringBuilder typeList = new StringBuilder();
+                for (AuthenticatorDescription desc : authTypes) {
+                    if (typeList.length() > 0) typeList.append(", ");
+                    typeList.append(desc.type).append("/").append(desc.packageName);
+                    if ("com.google".equals(desc.type)) {
+                        hasGoogleAuthenticator = true;
+                    }
+                }
+                sb.append("authenticatorTypes: [").append(typeList).append("]\n");
+            }
+
+            sb.append("hasGoogleAuthenticator: ").append(hasGoogleAuthenticator).append("\n");
+
+            if (!hasGoogleAuthenticator) {
+                sb.append("\nWARNING: No Google authenticator found on host device!\n");
+                sb.append("This means Play Games login will likely hang or fail.\n");
+                sb.append("The Google account authenticator is provided by com.google.android.gms.\n");
+                sb.append("Ensure Google Play Services is enabled on the host device.\n");
+            }
+
+            // Check if AccountAuthenticator service resolves for GMS in virtual PackageManager
+            sb.append("\n--- Virtual Authenticator Service Check ---\n");
+            Intent authIntent = new Intent("android.accounts.AccountAuthenticator");
+            // Check in virtual package manager
+            try {
+                List<ResolveInfo> virtualAuthServices = BlackBoxCore.getBPackageManager()
+                        .queryIntentActivities(authIntent, 0, null, 0);
+                sb.append("virtualAuthenticatorActivities: ").append(virtualAuthServices != null ? virtualAuthServices.size() : 0).append("\n");
+                if (virtualAuthServices != null) {
+                    for (ResolveInfo ri : virtualAuthServices) {
+                        String pkg = ri.activityInfo != null ? ri.activityInfo.packageName : "unknown";
+                        sb.append("  activity: ").append(pkg).append("/").append(ri.activityInfo != null ? ri.activityInfo.name : "?").append("\n");
+                    }
+                }
+            } catch (Exception e) {
+                sb.append("virtualAuthenticatorActivities: ERROR - ").append(e.getMessage()).append("\n");
+            }
+
+        } catch (SecurityException se) {
+            sb.append("ERROR: SecurityException - ").append(se.getMessage()).append("\n");
+            sb.append("The app may not have GET_ACCOUNTS permission.\n");
+        } catch (Exception e) {
+            sb.append("ERROR: ").append(e.getClass().getSimpleName()).append(" - ").append(e.getMessage()).append("\n");
+        }
+
+        sb.append("\n=== End of Account Diagnostic ===");
+        return sb.toString();
+    }
+
+    /**
+     * Mask an email address for privacy: a***@gmail.com
+     */
+    private static String maskEmail(String email) {
+        if (email == null || email.isEmpty()) return "";
+        int atIndex = email.indexOf('@');
+        if (atIndex <= 0) return "***";
+        String localPart = email.substring(0, atIndex);
+        String domain = email.substring(atIndex);
+        if (localPart.length() <= 1) {
+            return "*" + domain;
+        }
+        return localPart.charAt(0) + "***" + domain;
+    }
+
+    // ======================== Launch Test ========================
+
+    /**
+     * Result of a Play Games launch test.
+     */
+    public static class LaunchTestResult {
+        public final long timestamp;
+        public final boolean launchIntentExists;
+        public final String resolvedActivity;
+        public final String resolvedProcessName;
+        public final String resolvedSourceDir;
+        public final String resolvedSplitSourceDirs;
+        public final boolean launchResult;
+        public final boolean watchdogTimedOut;
+        public final String error;
+
+        public LaunchTestResult(long timestamp, boolean launchIntentExists, String resolvedActivity,
+                                String resolvedProcessName, String resolvedSourceDir,
+                                String resolvedSplitSourceDirs, boolean launchResult,
+                                boolean watchdogTimedOut, String error) {
+            this.timestamp = timestamp;
+            this.launchIntentExists = launchIntentExists;
+            this.resolvedActivity = resolvedActivity;
+            this.resolvedProcessName = resolvedProcessName;
+            this.resolvedSourceDir = resolvedSourceDir;
+            this.resolvedSplitSourceDirs = resolvedSplitSourceDirs;
+            this.launchResult = launchResult;
+            this.watchdogTimedOut = watchdogTimedOut;
+            this.error = error;
+        }
+
+        public String toReportString() {
+            StringBuilder sb = new StringBuilder();
+            sb.append("=== Play Games Launch Test ===\n");
+            sb.append("timestamp: ").append(timestamp).append("\n");
+            sb.append("launchIntentExists: ").append(launchIntentExists).append("\n");
+            sb.append("resolvedActivity: ").append(resolvedActivity != null ? resolvedActivity : "null").append("\n");
+            sb.append("resolvedProcessName: ").append(resolvedProcessName != null ? resolvedProcessName : "null").append("\n");
+            sb.append("resolvedSourceDir: ").append(resolvedSourceDir != null ? resolvedSourceDir : "null").append("\n");
+            sb.append("resolvedSplitSourceDirs: ").append(resolvedSplitSourceDirs != null ? resolvedSplitSourceDirs : "null").append("\n");
+            sb.append("launchResult: ").append(launchResult).append("\n");
+            sb.append("watchdogTimedOut: ").append(watchdogTimedOut).append("\n");
+            if (error != null && !error.isEmpty()) {
+                sb.append("error: ").append(error).append("\n");
+            }
+
+            if (!launchIntentExists) {
+                sb.append("\nDIAGNOSIS: Play Games has no launch intent in virtual PackageManager.\n");
+                sb.append("This means Play Games activity cannot be resolved.\n");
+                sb.append("Possible fix: Check PackageManager activity resolution for com.google.android.play.games.\n");
+            } else if (launchResult && watchdogTimedOut) {
+                sb.append("\nDIAGNOSIS: Launch was requested but the 15-second watchdog timed out.\n");
+                sb.append("Play Games may be hanging during startup (Application.onCreate, GMS init, or account check).\n");
+                sb.append("Check the Runtime Events diagnostic for lifecycle events after this launch.\n");
+            } else if (!launchResult) {
+                sb.append("\nDIAGNOSIS: launchApk() returned false.\n");
+                sb.append("The virtual framework refused to launch the activity.\n");
+            }
+
+            sb.append("\n=== End of Launch Test ===");
+            return sb.toString();
+        }
+    }
+
+    /** Store the last launch test result for inclusion in diagnostics */
+    private static volatile LaunchTestResult lastLaunchTestResult = null;
+
+    /**
+     * Get the last launch test result.
+     */
+    public static LaunchTestResult getLastLaunchTestResult() {
+        return lastLaunchTestResult;
+    }
+
+    /**
+     * Perform a Play Games launch test.
+     * Resolves the launch intent, attempts to launch, and runs a 15-second watchdog.
+     * This method is blocking — call from a background thread.
+     */
+    public static LaunchTestResult testPlayGamesLaunch(int userId) {
+        long timestamp = System.currentTimeMillis();
+        boolean launchIntentExists = false;
+        String resolvedActivity = null;
+        String resolvedProcessName = null;
+        String resolvedSourceDir = null;
+        String resolvedSplitSourceDirs = null;
+        boolean launchResult = false;
+        boolean watchdogTimedOut = false;
+        String error = null;
+
+        try {
+            // Step 1: Resolve launch intent
+            Intent launchIntent = BlackBoxCore.getBPackageManager()
+                    .getLaunchIntentForPackage(PLAY_GAMES_PKG, userId);
+
+            if (launchIntent != null) {
+                launchIntentExists = true;
+
+                // Step 2: Resolve the activity info
+                try {
+                    List<ResolveInfo> resolveInfos = BlackBoxCore.getBPackageManager()
+                            .queryIntentActivities(launchIntent, 0, null, userId);
+                    if (resolveInfos != null && !resolveInfos.isEmpty()) {
+                        ResolveInfo ri = resolveInfos.get(0);
+                        if (ri.activityInfo != null) {
+                            resolvedActivity = ri.activityInfo.packageName + "/" + ri.activityInfo.name;
+                            resolvedProcessName = ri.activityInfo.processName;
+                            resolvedSourceDir = ri.activityInfo.applicationInfo != null
+                                    ? ri.activityInfo.applicationInfo.sourceDir : null;
+                            resolvedSplitSourceDirs = ri.activityInfo.applicationInfo != null
+                                    ? (ri.activityInfo.applicationInfo.splitSourceDirs != null
+                                    ? Arrays.toString(ri.activityInfo.applicationInfo.splitSourceDirs) : null)
+                                    : null;
+                        }
+                    }
+                } catch (Exception e) {
+                    Slog.w(TAG, "Could not resolve activity info for Play Games: " + e.getMessage());
+                    resolvedActivity = "resolve_error: " + e.getMessage();
+                }
+            }
+
+            // Step 3: Attempt launch
+            if (launchIntentExists) {
+                int eventCountBefore = GoogleRuntimeEventLogger.getEventCount();
+                launchResult = BlackBoxCore.get().launchApk(PLAY_GAMES_PKG, userId);
+
+                // Step 4: 15-second watchdog — check if lifecycle events appear
+                long watchdogStart = System.currentTimeMillis();
+                long watchdogTimeout = 15000;
+                while (System.currentTimeMillis() - watchdogStart < watchdogTimeout) {
+                    try {
+                        Thread.sleep(2000);
+                    } catch (InterruptedException ie) {
+                        Thread.currentThread().interrupt();
+                        break;
+                    }
+                    // Check if new Google events appeared
+                    int eventCountAfter = GoogleRuntimeEventLogger.getEventCount();
+                    if (eventCountAfter > eventCountBefore) {
+                        // Lifecycle events are appearing — the app is at least starting
+                        Slog.d(TAG, "Play Games launch: " + (eventCountAfter - eventCountBefore)
+                                + " new runtime events detected after launch");
+                        break;
+                    }
+                }
+
+                if (GoogleRuntimeEventLogger.getEventCount() == eventCountBefore) {
+                    watchdogTimedOut = true;
+                    Slog.w(TAG, "Play Games launch watchdog timed out — no runtime events detected in 15s");
+                }
+            }
+
+        } catch (Exception e) {
+            error = e.getClass().getSimpleName() + ": " + e.getMessage();
+            Slog.e(TAG, "Play Games launch test error", e);
+        }
+
+        LaunchTestResult result = new LaunchTestResult(
+                timestamp, launchIntentExists, resolvedActivity, resolvedProcessName,
+                resolvedSourceDir, resolvedSplitSourceDirs, launchResult, watchdogTimedOut, error
+        );
+
+        lastLaunchTestResult = result;
+        return result;
+    }
+
+    // ======================== Provider Diagnostics ========================
+
+    /**
+     * Get provider diagnostic info for Google packages.
+     * Lists all ContentProviders declared in virtual PackageInfo for GMS and Play Games,
+     * then checks if they can be resolved by the virtual PackageManager.
+     */
+    public static String getProviderDiagnostic(int userId) {
+        StringBuilder sb = new StringBuilder();
+        sb.append("=== Provider Diagnostic ===\n");
+        sb.append("User ID: ").append(userId).append("\n\n");
+
+        String[] packagesToCheck = {GMS_PKG, PLAY_GAMES_PKG, GSF_PKG, VENDING_PKG};
+        String[] packageLabels = {"GMS", "Play Games", "GSF", "Play Store"};
+
+        for (int i = 0; i < packagesToCheck.length; i++) {
+            String pkg = packagesToCheck[i];
+            String label = packageLabels[i];
+
+            sb.append("--- ").append(label).append(" (").append(pkg).append(") ---\n");
+
+            boolean virtualInstalled = BlackBoxCore.get().isInstalled(pkg, userId);
+            if (!virtualInstalled) {
+                sb.append("  Not installed in virtual — skipping\n\n");
+                continue;
+            }
+
+            // Get PackageInfo with providers
+            try {
+                PackageInfo pkgInfo = BlackBoxCore.getBPackageManager()
+                        .getPackageInfo(pkg, PackageManager.GET_PROVIDERS, userId);
+
+                if (pkgInfo != null && pkgInfo.providers != null && pkgInfo.providers.length > 0) {
+                    sb.append("  Declared providers: ").append(pkgInfo.providers.length).append("\n");
+                    for (ProviderInfo provider : pkgInfo.providers) {
+                        sb.append("    authority: ").append(provider.authority).append("\n");
+                        sb.append("      name: ").append(provider.name).append("\n");
+                        sb.append("      packageName: ").append(provider.packageName).append("\n");
+                        sb.append("      exported: ").append(provider.exported).append("\n");
+
+                        // Try to resolve this provider in virtual PackageManager
+                        try {
+                            ProviderInfo resolved = BlackBoxCore.getBPackageManager()
+                                    .resolveContentProvider(provider.authority, 0, userId);
+                            sb.append("      resolvesInVirtual: ").append(resolved != null).append("\n");
+                            if (resolved != null && !resolved.packageName.equals(provider.packageName)) {
+                                sb.append("      WARNING: resolved to different package: ").append(resolved.packageName).append("\n");
+                            }
+                        } catch (Exception e) {
+                            sb.append("      resolvesInVirtual: ERROR - ").append(e.getMessage()).append("\n");
+                        }
+                    }
+                } else {
+                    sb.append("  Declared providers: 0 (or could not retrieve)\n");
+                }
+            } catch (Exception e) {
+                sb.append("  ERROR getting providers: ").append(e.getMessage()).append("\n");
+            }
+
+            sb.append("\n");
+        }
+
+        // Also check some well-known GMS authorities
+        sb.append("--- Well-known GMS Provider Authority Check ---\n");
+        String[] knownAuthorities = {
+                "com.google.android.gms.chimera",
+                "com.google.android.gms.games",
+                "com.google.android.gsf.gservices",
+                "com.google.android.gms.measurement.google_measurement_service",
+                "com.google.android.gms.auth.accounts",
+                "com.google.android.gms.fitness.app_state_provider",
+                "com.google.android.gms.appstate.internal"
+        };
+
+        for (String authority : knownAuthorities) {
+            try {
+                ProviderInfo resolved = BlackBoxCore.getBPackageManager()
+                        .resolveContentProvider(authority, 0, userId);
+                if (resolved != null) {
+                    sb.append("  ").append(authority).append(": resolves to ").append(resolved.packageName).append("/").append(resolved.name).append("\n");
+                } else {
+                    sb.append("  ").append(authority).append(": NOT RESOLVED (null)\n");
+                }
+            } catch (Exception e) {
+                sb.append("  ").append(authority).append(": ERROR - ").append(e.getMessage()).append("\n");
+            }
+        }
+
+        sb.append("\n=== End of Provider Diagnostic ===");
+        return sb.toString();
+    }
+
+    // ======================== Service Diagnostics ========================
+
+    /**
+     * Get service diagnostic info for Google packages.
+     * Checks if AccountAuthenticator service can be resolved for GMS in virtual PackageManager.
+     */
+    public static String getServiceDiagnostic(int userId) {
+        StringBuilder sb = new StringBuilder();
+        sb.append("=== Service Diagnostic ===\n");
+        sb.append("User ID: ").append(userId).append("\n\n");
+
+        // Check AccountAuthenticator service resolution
+        sb.append("--- AccountAuthenticator Service ---\n");
+        Intent authIntent = new Intent("android.accounts.AccountAuthenticator");
+        try {
+            List<ResolveInfo> activities = BlackBoxCore.getBPackageManager()
+                    .queryIntentActivities(authIntent, 0, null, userId);
+            sb.append("queryIntentActivities(AccountAuthenticator): ").append(activities != null ? activities.size() : 0).append(" results\n");
+            if (activities != null) {
+                for (ResolveInfo ri : activities) {
+                    String actPkg = ri.activityInfo != null ? ri.activityInfo.packageName : "unknown";
+                    String actName = ri.activityInfo != null ? ri.activityInfo.name : "unknown";
+                    sb.append("  activity: ").append(actPkg).append("/").append(actName).append("\n");
+                }
+            }
+        } catch (Exception e) {
+            sb.append("queryIntentActivities(AccountAuthenticator): ERROR - ").append(e.getMessage()).append("\n");
+        }
+
+        // Also check via ServiceInfo for GMS authenticator
+        sb.append("\n--- GMS Authenticator Service (direct lookup) ---\n");
+        try {
+            // GMS has an AccountAuthenticator service, try to resolve it directly
+            ComponentName gmsAuthService = new ComponentName(GMS_PKG,
+                    "com.google.android.gms.auth.DefaultAuthDelegateService");
+            ServiceInfo serviceInfo = BlackBoxCore.getBPackageManager()
+                    .getServiceInfo(gmsAuthService, 0, userId);
+            if (serviceInfo != null) {
+                sb.append("GMS DefaultAuthDelegateService: FOUND\n");
+                sb.append("  packageName: ").append(serviceInfo.packageName).append("\n");
+                sb.append("  name: ").append(serviceInfo.name).append("\n");
+                sb.append("  exported: ").append(serviceInfo.exported).append("\n");
+                sb.append("  permission: ").append(serviceInfo.permission).append("\n");
+            } else {
+                sb.append("GMS DefaultAuthDelegateService: NOT FOUND (null)\n");
+            }
+        } catch (Exception e) {
+            sb.append("GMS DefaultAuthDelegateService: ERROR - ").append(e.getMessage()).append("\n");
+        }
+
+        // Try alternative authenticator service name
+        try {
+            ComponentName gmsAuthService2 = new ComponentName(GMS_PKG,
+                    "com.google.android.gms.auth.GetToken");
+            ServiceInfo serviceInfo2 = BlackBoxCore.getBPackageManager()
+                    .getServiceInfo(gmsAuthService2, 0, userId);
+            if (serviceInfo2 != null) {
+                sb.append("GMS GetToken service: FOUND\n");
+                sb.append("  packageName: ").append(serviceInfo2.packageName).append("\n");
+            } else {
+                sb.append("GMS GetToken service: NOT FOUND (null)\n");
+            }
+        } catch (Exception e) {
+            sb.append("GMS GetToken service: ERROR - ").append(e.getMessage()).append("\n");
+        }
+
+        // List all services from GMS PackageInfo
+        sb.append("\n--- GMS Declared Services (from PackageInfo) ---\n");
+        try {
+            PackageInfo gmsPkgInfo = BlackBoxCore.getBPackageManager()
+                    .getPackageInfo(GMS_PKG, PackageManager.GET_SERVICES, userId);
+            if (gmsPkgInfo != null && gmsPkgInfo.services != null) {
+                sb.append("Total GMS services: ").append(gmsPkgInfo.services.length).append("\n");
+                // Only list services with "auth" or "account" in name to keep output manageable
+                int relevantCount = 0;
+                for (ServiceInfo svc : gmsPkgInfo.services) {
+                    String svcNameLower = svc.name.toLowerCase();
+                    if (svcNameLower.contains("auth") || svcNameLower.contains("account")
+                            || svcNameLower.contains("login") || svcNameLower.contains("games")) {
+                        sb.append("  ").append(svc.name).append(" (exported=").append(svc.exported).append(")\n");
+                        relevantCount++;
+                    }
+                }
+                if (relevantCount == 0) {
+                    sb.append("  (No auth/account/login/games services found — listing first 10)\n");
+                    int count = 0;
+                    for (ServiceInfo svc : gmsPkgInfo.services) {
+                        sb.append("  ").append(svc.name).append(" (exported=").append(svc.exported).append(")\n");
+                        count++;
+                        if (count >= 10) {
+                            sb.append("  ... and ").append(gmsPkgInfo.services.length - 10).append(" more\n");
+                            break;
+                        }
+                    }
+                }
+            } else {
+                sb.append("No services in PackageInfo (or could not retrieve)\n");
+            }
+        } catch (Exception e) {
+            sb.append("ERROR: ").append(e.getMessage()).append("\n");
+        }
+
+        // Play Games services
+        sb.append("\n--- Play Games Declared Services ---\n");
+        try {
+            PackageInfo pgPkgInfo = BlackBoxCore.getBPackageManager()
+                    .getPackageInfo(PLAY_GAMES_PKG, PackageManager.GET_SERVICES, userId);
+            if (pgPkgInfo != null && pgPkgInfo.services != null) {
+                sb.append("Total Play Games services: ").append(pgPkgInfo.services.length).append("\n");
+                for (ServiceInfo svc : pgPkgInfo.services) {
+                    sb.append("  ").append(svc.name).append(" (exported=").append(svc.exported).append(")\n");
+                }
+            } else {
+                sb.append("No services in PackageInfo (or could not retrieve)\n");
+            }
+        } catch (Exception e) {
+            sb.append("ERROR: ").append(e.getMessage()).append("\n");
+        }
+
+        sb.append("\n=== End of Service Diagnostic ===");
         return sb.toString();
     }
 
@@ -404,6 +961,8 @@ public class GmsCore {
         if (allInstalled && abiCompatible) {
             sb.append("Result: READY\n");
             sb.append("All Google packages are installed and ABI-compatible.\n");
+            sb.append("NOTE: READY means packages are present, NOT that Play Games will work.\n");
+            sb.append("If Play Games hangs, use the runtime diagnostics (Account, Launch Test, Provider, Service) to find the exact hang point.\n");
         } else {
             sb.append("Result: NOT READY\n");
             if (!allInstalled) {

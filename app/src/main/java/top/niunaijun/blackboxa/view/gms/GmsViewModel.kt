@@ -2,6 +2,7 @@ package top.niunaijun.blackboxa.view.gms
 
 import android.content.Context
 import androidx.lifecycle.MutableLiveData
+import top.niunaijun.blackbox.core.GmsCore
 import top.niunaijun.blackboxa.bean.GmsBean
 import top.niunaijun.blackboxa.bean.GmsInstallBean
 import top.niunaijun.blackboxa.data.GmsRepository
@@ -15,6 +16,15 @@ class GmsViewModel(val mRepo: GmsRepository) : BaseViewModel() {
     val mDiagnosticLiveData = MutableLiveData<String>()
     val mPlayGamesImportLiveData = MutableLiveData<GmsRepository.PlayGamesInstallResult>()
     val mReadinessLiveData = MutableLiveData<Pair<Boolean, String>>()
+
+    /** Account diagnostic copy result */
+    val mAccountDiagnosticLiveData = MutableLiveData<String>()
+
+    /** Launch test result */
+    val mLaunchTestLiveData = MutableLiveData<GmsCore.LaunchTestResult>()
+
+    /** Runtime diagnostic copy result */
+    val mRuntimeDiagnosticLiveData = MutableLiveData<String>()
 
     fun getInstalledUser() {
         launchOnUI {
@@ -64,6 +74,37 @@ class GmsViewModel(val mRepo: GmsRepository) : BaseViewModel() {
             mPlayGamesImportLiveData.postValue(result)
             // Refresh readiness after import
             checkReadiness(userId)
+        }
+    }
+
+    /**
+     * Get AccountManager diagnostic and copy to clipboard.
+     */
+    fun getAccountDiagnostic() {
+        launchOnUI {
+            val diagnostic = mRepo.getAccountDiagnostic()
+            mAccountDiagnosticLiveData.postValue(diagnostic)
+        }
+    }
+
+    /**
+     * Test launch Play Games with watchdog.
+     * This is a blocking operation — runs on background thread.
+     */
+    fun testLaunchPlayGames(userId: Int) {
+        launchOnUI {
+            val result = mRepo.testPlayGamesLaunch(userId)
+            mLaunchTestLiveData.postValue(result)
+        }
+    }
+
+    /**
+     * Get comprehensive runtime diagnostic and copy to clipboard.
+     */
+    fun getRuntimeDiagnostic(userId: Int) {
+        launchOnUI {
+            val diagnostic = mRepo.getComprehensiveRuntimeDiagnostic(userId)
+            mRuntimeDiagnosticLiveData.postValue(diagnostic)
         }
     }
 }

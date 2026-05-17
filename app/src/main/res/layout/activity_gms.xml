@@ -90,33 +90,71 @@
                     android:layout_height="wrap_content"
                     android:nestedScrollingEnabled="false" />
 
-            <!-- Action buttons -->
-            <LinearLayout
+            <!-- Diagnostics section -->
+            <TextView
                     android:layout_width="match_parent"
                     android:layout_height="wrap_content"
-                    android:orientation="horizontal"
-                    android:gravity="center"
-                    android:padding="16dp"
-                    android:layout_marginTop="8dp">
+                    android:text="@string/gms_diagnostics_section"
+                    android:textStyle="bold"
+                    android:textSize="15sp"
+                    android:paddingStart="16dp"
+                    android:paddingEnd="16dp"
+                    android:paddingTop="12dp"
+                    android:paddingBottom="4dp" />
 
-                <Button
-                        android:id="@+id/btnCopyDiagnostic"
-                        android:layout_width="0dp"
-                        android:layout_height="wrap_content"
-                        android:layout_weight="1"
-                        android:layout_marginEnd="8dp"
-                        android:text="@string/gms_copy_diagnostic"
-                        android:textAllCaps="false" />
+            <!-- GMS + Readiness Diagnostic button -->
+            <Button
+                    android:id="@+id/btnCopyDiagnostic"
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:layout_marginStart="16dp"
+                    android:layout_marginEnd="16dp"
+                    android:text="@string/gms_copy_diagnostic"
+                    android:textAllCaps="false" />
 
-                <Button
-                        android:id="@+id/btnImportPlayGames2"
-                        android:layout_width="0dp"
-                        android:layout_height="wrap_content"
-                        android:layout_weight="1"
-                        android:layout_marginStart="8dp"
-                        android:text="@string/gms_import_play_games"
-                        android:textAllCaps="false" />
-            </LinearLayout>
+            <!-- Account Diagnostic button -->
+            <Button
+                    android:id="@+id/btnCopyAccountDiagnostic"
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:layout_marginStart="16dp"
+                    android:layout_marginEnd="16dp"
+                    android:layout_marginTop="4dp"
+                    android:text="@string/gms_copy_account_diagnostic"
+                    android:textAllCaps="false" />
+
+            <!-- Launch Test button -->
+            <Button
+                    android:id="@+id/btnTestLaunchPlayGames"
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:layout_marginStart="16dp"
+                    android:layout_marginEnd="16dp"
+                    android:layout_marginTop="4dp"
+                    android:text="@string/gms_test_launch_play_games"
+                    android:textAllCaps="false" />
+
+            <!-- Runtime Diagnostic button -->
+            <Button
+                    android:id="@+id/btnCopyRuntimeDiagnostic"
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:layout_marginStart="16dp"
+                    android:layout_marginEnd="16dp"
+                    android:layout_marginTop="4dp"
+                    android:text="@string/gms_copy_runtime_diagnostic"
+                    android:textAllCaps="false" />
+
+            <!-- Import Play Games button (bottom) -->
+            <Button
+                    android:id="@+id/btnImportPlayGames2"
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:layout_marginStart="16dp"
+                    android:layout_marginEnd="16dp"
+                    android:layout_marginTop="12dp"
+                    android:text="@string/gms_import_play_games"
+                    android:textAllCaps="false" />
 
         </LinearLayout>
     </ScrollView>

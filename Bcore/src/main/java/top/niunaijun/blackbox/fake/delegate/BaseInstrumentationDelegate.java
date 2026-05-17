@@ -23,6 +23,7 @@ import android.view.MotionEvent;
 import top.niunaijun.blackbox.BlackBoxCore;
 import top.niunaijun.blackbox.app.BActivityThread;
 import top.niunaijun.blackbox.app.configuration.AppLifecycleCallback;
+import top.niunaijun.blackbox.core.GoogleRuntimeEventLogger;
 import top.niunaijun.blackbox.utils.Reflector;
 
 public class BaseInstrumentationDelegate extends Instrumentation {
@@ -310,6 +311,11 @@ public class BaseInstrumentationDelegate extends Instrumentation {
     @Override
     public void callActivityOnCreate(Activity activity, Bundle icicle) {
         mBaseInstrumentation.callActivityOnCreate(activity, icicle);
+        // Log Google package activity lifecycle for diagnostics
+        String pkg = activity.getPackageName();
+        GoogleRuntimeEventLogger.logEvent(pkg, "activityOnCreate",
+                activity.getIntent() != null ? activity.getIntent().getComponent() != null ? activity.getIntent().getComponent().getClassName() : activity.getClass().getName() : activity.getClass().getName(),
+                -1, activity.getClass().getSimpleName());
         for (AppLifecycleCallback appLifecycleCallback : BlackBoxCore.get().getAppLifecycleCallbacks()) {
             appLifecycleCallback.onActivityCreated(activity, icicle);
         }

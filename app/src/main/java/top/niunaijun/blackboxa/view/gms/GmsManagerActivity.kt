@@ -117,6 +117,38 @@ class GmsManagerActivity : LoadingActivity() {
             updateReadinessUI(isReady)
         }
 
+        viewModel.mAccountDiagnosticLiveData.observe(this) { diagnosticText ->
+            hideLoading()
+            val clipboard = getSystemService(Context.CLIPBOARD_SERVICE) as android.content.ClipboardManager
+            val clip = ClipData.newPlainText("Account Diagnostic", diagnosticText)
+            clipboard.setPrimaryClip(clip)
+            toast(R.string.gms_account_diagnostic_copied)
+        }
+
+        viewModel.mLaunchTestLiveData.observe(this) { result ->
+            hideLoading()
+            // Show launch test result in a dialog
+            val report = result.toReportString()
+            // Also copy to clipboard
+            val clipboard = getSystemService(Context.CLIPBOARD_SERVICE) as android.content.ClipboardManager
+            val clip = ClipData.newPlainText("Launch Test", report)
+            clipboard.setPrimaryClip(clip)
+
+            MaterialDialog(this).show {
+                title(R.string.gms_launch_test)
+                message(text = report)
+                positiveButton(R.string.done)
+            }
+        }
+
+        viewModel.mRuntimeDiagnosticLiveData.observe(this) { diagnosticText ->
+            hideLoading()
+            val clipboard = getSystemService(Context.CLIPBOARD_SERVICE) as android.content.ClipboardManager
+            val clip = ClipData.newPlainText("Runtime Diagnostic", diagnosticText)
+            clipboard.setPrimaryClip(clip)
+            toast(R.string.gms_runtime_diagnostic_copied)
+        }
+
         viewModel.getInstalledUser()
     }
 
@@ -134,10 +166,29 @@ class GmsManagerActivity : LoadingActivity() {
     }
 
     private fun initActionButtons() {
-        // Copy diagnostic button
+        // Copy GMS diagnostic button
         viewBinding.btnCopyDiagnostic.setOnClickListener {
             showLoading()
             viewModel.getDiagnostic(currentUserId)
+        }
+
+        // Copy Account diagnostic button
+        viewBinding.btnCopyAccountDiagnostic.setOnClickListener {
+            showLoading()
+            viewModel.getAccountDiagnostic()
+        }
+
+        // Test Launch Play Games button
+        viewBinding.btnTestLaunchPlayGames.setOnClickListener {
+            showLoading()
+            toast(R.string.gms_launch_test_starting)
+            viewModel.testLaunchPlayGames(currentUserId)
+        }
+
+        // Copy Runtime diagnostic button
+        viewBinding.btnCopyRuntimeDiagnostic.setOnClickListener {
+            showLoading()
+            viewModel.getRuntimeDiagnostic(currentUserId)
         }
 
         // Import Play Games button (bottom)
@@ -178,7 +229,7 @@ class GmsManagerActivity : LoadingActivity() {
             viewBinding.playGamesWarning.visibility = View.VISIBLE
             viewBinding.readinessStatus.visibility = View.GONE
         } else if (isReady) {
-            // Show success
+            // Show success but with note that READY ≠ working
             viewBinding.playGamesWarning.visibility = View.GONE
             viewBinding.readinessStatus.visibility = View.VISIBLE
             viewBinding.readinessText.text = getString(R.string.gms_game_login_readiness) + ": " + getString(R.string.gms_ready)
