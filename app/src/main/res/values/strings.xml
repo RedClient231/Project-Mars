@@ -84,6 +84,9 @@
     <string name="gms_diagnostics_section">Runtime Diagnostics</string>
     <string name="gms_copy_account_diagnostic">Copy Account Diagnostic</string>
     <string name="gms_account_diagnostic_copied">Account diagnostic copied to clipboard</string>
+    <string name="gms_copy_authenticator_diagnostic">Copy Authenticator Diagnostic</string>
+    <string name="gms_authenticator_diagnostic_copied">Authenticator diagnostic copied to clipboard</string>
+    <string name="gms_add_google_account">Add Google Account</string>
     <string name="gms_test_launch_play_games">Test Launch Play Games</string>
     <string name="gms_launch_test">Play Games Launch Test</string>
     <string name="gms_launch_test_starting">Launching Play Games (15s watchdog)…</string>

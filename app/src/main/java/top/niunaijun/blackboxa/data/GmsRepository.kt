@@ -91,6 +91,14 @@ class GmsRepository {
     }
 
     /**
+     * Get Google authenticator diagnostic.
+     * Focuses on whether AccountAuthenticator services can be resolved in virtual PackageManager.
+     */
+    fun getGoogleAuthenticatorDiagnostic(userId: Int): String {
+        return GmsCore.getGoogleAuthenticatorDiagnostic(userId)
+    }
+
+    /**
      * Perform a Play Games launch test.
      * Returns the result for UI display.
      */
@@ -134,6 +142,9 @@ class GmsRepository {
         val sb = StringBuilder()
 
         sb.append(GmsCore.getAccountDiagnostic())
+        sb.append("\n\n")
+
+        sb.append(GmsCore.getGoogleAuthenticatorDiagnostic(userId))
         sb.append("\n\n")
 
         sb.append(GmsCore.getProviderDiagnostic(userId))

@@ -9,6 +9,7 @@ on:
       - feature/full-resource-split-xapk
       - feature/real-gms-playgames-support
       - feature/play-games-runtime-diagnostics
+      - feature/google-accountmanager-service-fix
 
 jobs:
   build:

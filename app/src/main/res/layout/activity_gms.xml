@@ -123,6 +123,28 @@
                     android:text="@string/gms_copy_account_diagnostic"
                     android:textAllCaps="false" />
 
+            <!-- Authenticator Diagnostic button -->
+            <Button
+                    android:id="@+id/btnCopyAuthenticatorDiagnostic"
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:layout_marginStart="16dp"
+                    android:layout_marginEnd="16dp"
+                    android:layout_marginTop="4dp"
+                    android:text="@string/gms_copy_authenticator_diagnostic"
+                    android:textAllCaps="false" />
+
+            <!-- Add Google Account test button -->
+            <Button
+                    android:id="@+id/btnAddGoogleAccount"
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:layout_marginStart="16dp"
+                    android:layout_marginEnd="16dp"
+                    android:layout_marginTop="4dp"
+                    android:text="@string/gms_add_google_account"
+                    android:textAllCaps="false" />
+
             <!-- Launch Test button -->
             <Button
                     android:id="@+id/btnTestLaunchPlayGames"

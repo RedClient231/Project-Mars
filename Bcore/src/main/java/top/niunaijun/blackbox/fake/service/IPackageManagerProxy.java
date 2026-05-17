@@ -341,6 +341,46 @@ public class IPackageManagerProxy extends BinderInvocationStub {
         }
     }
 
+    @ProxyMethod("queryIntentServices")
+    public static class QueryIntentServices extends MethodHook {
+        @Override
+        protected Object hook(Object who, Method method, Object[] args) throws Throwable {
+            Intent intent = MethodParameterUtils.getFirstParam(args, Intent.class);
+            String resolvedType = MethodParameterUtils.getFirstParam(args, String.class);
+            Integer flags = MethodParameterUtils.getFirstParam(args, Integer.class);
+
+            // Check the virtual package manager first.
+            // This is critical for Google AccountAuthenticator service discovery —
+            // Play Games and GMS find the authenticator via queryIntentServices,
+            // not queryIntentActivities. Without this hook, the virtual app's
+            // queryIntentServices calls go to the system PackageManager which
+            // doesn't know about virtual-installed Google packages.
+            if (intent != null) {
+                List<ResolveInfo> resolves = BlackBoxCore.getBPackageManager()
+                        .queryIntentServices(intent,
+                                flags != null ? flags : 0,
+                                BActivityThread.getUserId());
+
+                if (resolves != null && !resolves.isEmpty()) {
+                    // Log Google-related service queries for diagnostics
+                    String action = intent.getAction();
+                    if (action != null && (action.contains("accounts") || action.contains("auth")
+                            || action.contains("google") || action.contains("AccountAuthenticator"))) {
+                        Slog.d(TAG, "queryIntentServices: Found " + resolves.size()
+                                + " results in virtual PM for intent: " + action);
+                    }
+                    if (BuildCompat.isN()) {
+                        return ParceledListSliceCompat.create(resolves);
+                    }
+                    return resolves;
+                }
+            }
+
+            // Fall through to system package manager
+            return method.invoke(who, args);
+        }
+    }
+
     @ProxyMethod("queryIntentReceivers")
     public static class QueryBroadcastReceivers extends MethodHook {
         @Override

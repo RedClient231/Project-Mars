@@ -125,6 +125,14 @@ class GmsManagerActivity : LoadingActivity() {
             toast(R.string.gms_account_diagnostic_copied)
         }
 
+        viewModel.mAuthenticatorDiagnosticLiveData.observe(this) { diagnosticText ->
+            hideLoading()
+            val clipboard = getSystemService(Context.CLIPBOARD_SERVICE) as android.content.ClipboardManager
+            val clip = ClipData.newPlainText("Authenticator Diagnostic", diagnosticText)
+            clipboard.setPrimaryClip(clip)
+            toast(R.string.gms_authenticator_diagnostic_copied)
+        }
+
         viewModel.mLaunchTestLiveData.observe(this) { result ->
             hideLoading()
             // Show launch test result in a dialog
@@ -147,6 +155,15 @@ class GmsManagerActivity : LoadingActivity() {
             val clip = ClipData.newPlainText("Runtime Diagnostic", diagnosticText)
             clipboard.setPrimaryClip(clip)
             toast(R.string.gms_runtime_diagnostic_copied)
+        }
+
+        viewModel.mAddAccountLiveData.observe(this) { result ->
+            hideLoading()
+            MaterialDialog(this).show {
+                title(R.string.gms_add_google_account)
+                message(text = result.message + "\n\n" + result.detail)
+                positiveButton(R.string.done)
+            }
         }
 
         viewModel.getInstalledUser()
@@ -178,6 +195,12 @@ class GmsManagerActivity : LoadingActivity() {
             viewModel.getAccountDiagnostic()
         }
 
+        // Copy Authenticator diagnostic button
+        viewBinding.btnCopyAuthenticatorDiagnostic.setOnClickListener {
+            showLoading()
+            viewModel.getAuthenticatorDiagnostic(currentUserId)
+        }
+
         // Test Launch Play Games button
         viewBinding.btnTestLaunchPlayGames.setOnClickListener {
             showLoading()
@@ -189,6 +212,12 @@ class GmsManagerActivity : LoadingActivity() {
         viewBinding.btnCopyRuntimeDiagnostic.setOnClickListener {
             showLoading()
             viewModel.getRuntimeDiagnostic(currentUserId)
+        }
+
+        // Add Google Account test button
+        viewBinding.btnAddGoogleAccount.setOnClickListener {
+            showLoading()
+            viewModel.testAddGoogleAccount(this)
         }
 
         // Import Play Games button (bottom)

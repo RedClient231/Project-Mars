@@ -466,6 +466,41 @@ public class BPackageManager extends BlackManager<IBPackageManagerService> {
         return Collections.emptyList();
     }
 
+    /**
+     * Query intent services from the virtual package manager.
+     * This is critical for AccountManager authenticator service discovery —
+     * Google's authenticator is a Service, not an Activity, and Play Games/GMS
+     * discover it through queryIntentServices("android.accounts.AccountAuthenticator").
+     */
+    public List<ResolveInfo> queryIntentServices(Intent intent, int flags, int userId) {
+        try {
+            IBPackageManagerService service = getService();
+            if (service != null) {
+                List<ResolveInfo> result = service.queryIntentServices(intent, flags, userId);
+                return result;
+            } else {
+                Log.w(TAG, "PackageManager service is null, returning empty list for queryIntentServices");
+                return Collections.emptyList();
+            }
+        } catch (android.os.DeadObjectException e) {
+            Log.w(TAG, "PackageManager service died during queryIntentServices, clearing cache and retrying", e);
+            clearServiceCache();
+            try {
+                IBPackageManagerService service = getService();
+                if (service != null) {
+                    return service.queryIntentServices(intent, flags, userId);
+                }
+            } catch (Exception retryException) {
+                Log.e(TAG, "Retry failed for queryIntentServices", retryException);
+            }
+            return Collections.emptyList();
+        } catch (RemoteException e) {
+            Log.e(TAG, "RemoteException in queryIntentServices", e);
+            crash(e);
+        }
+        return Collections.emptyList();
+    }
+
     public List<ProviderInfo> queryContentProviders(String processName, int uid, int flags, int userId) {
         try {
             IBPackageManagerService service = getService();

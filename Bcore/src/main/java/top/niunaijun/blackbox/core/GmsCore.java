@@ -484,13 +484,39 @@ public class GmsCore {
             // Check if AccountAuthenticator service resolves for GMS in virtual PackageManager
             sb.append("\n--- Virtual Authenticator Service Check ---\n");
             Intent authIntent = new Intent("android.accounts.AccountAuthenticator");
-            // Check in virtual package manager
+
+            // Check SERVICES (not activities) — Google authenticator is a Service
             try {
                 List<ResolveInfo> virtualAuthServices = BlackBoxCore.getBPackageManager()
-                        .queryIntentActivities(authIntent, 0, null, 0);
-                sb.append("virtualAuthenticatorActivities: ").append(virtualAuthServices != null ? virtualAuthServices.size() : 0).append("\n");
+                        .queryIntentServices(authIntent, 0, userId);
+                sb.append("virtualAuthenticatorServices: ").append(virtualAuthServices != null ? virtualAuthServices.size() : 0).append("\n");
                 if (virtualAuthServices != null) {
                     for (ResolveInfo ri : virtualAuthServices) {
+                        if (ri.serviceInfo != null) {
+                            sb.append("  service: ").append(ri.serviceInfo.packageName).append("/")
+                                    .append(ri.serviceInfo.name).append("\n");
+                            sb.append("    processName: ").append(ri.serviceInfo.processName != null ? ri.serviceInfo.processName : ri.serviceInfo.packageName).append("\n");
+                            sb.append("    exported: ").append(ri.serviceInfo.exported).append("\n");
+                            sb.append("    permission: ").append(ri.serviceInfo.permission != null ? ri.serviceInfo.permission : "none").append("\n");
+                        }
+                    }
+                }
+                if (virtualAuthServices == null || virtualAuthServices.isEmpty()) {
+                    sb.append("  WARNING: No AccountAuthenticator services found in virtual PackageManager!\n");
+                    sb.append("  Play Games/GMS cannot discover Google's authenticator service.\n");
+                    sb.append("  This is likely why Play Games hangs during sign-in.\n");
+                }
+            } catch (Exception e) {
+                sb.append("virtualAuthenticatorServices: ERROR - ").append(e.getMessage()).append("\n");
+            }
+
+            // Also check activities for completeness (less important but still useful)
+            try {
+                List<ResolveInfo> virtualAuthActivities = BlackBoxCore.getBPackageManager()
+                        .queryIntentActivities(authIntent, 0, null, userId);
+                sb.append("virtualAuthenticatorActivities: ").append(virtualAuthActivities != null ? virtualAuthActivities.size() : 0).append("\n");
+                if (virtualAuthActivities != null && !virtualAuthActivities.isEmpty()) {
+                    for (ResolveInfo ri : virtualAuthActivities) {
                         String pkg = ri.activityInfo != null ? ri.activityInfo.packageName : "unknown";
                         sb.append("  activity: ").append(pkg).append("/").append(ri.activityInfo != null ? ri.activityInfo.name : "?").append("\n");
                     }
@@ -523,6 +549,143 @@ public class GmsCore {
             return "*" + domain;
         }
         return localPart.charAt(0) + "***" + domain;
+    }
+
+    // ======================== Google Authenticator Diagnostic ========================
+
+    /**
+     * Get a focused diagnostic for Google authenticator service visibility.
+     * This is the key diagnostic for Play Games sign-in — if Google's
+     * AccountAuthenticator service cannot be resolved in the virtual
+     * PackageManager, Play Games will hang during sign-in initialization.
+     */
+    public static String getGoogleAuthenticatorDiagnostic(int userId) {
+        StringBuilder sb = new StringBuilder();
+        sb.append("=== Google Authenticator Diagnostic ===\n");
+        sb.append("User ID: ").append(userId).append("\n\n");
+
+        // 1. Virtual Package Install State
+        sb.append("--- Virtual Package Install State ---\n");
+        sb.append("GSF virtual: ").append(BlackBoxCore.get().isInstalled(GSF_PKG, userId)).append("\n");
+        sb.append("GMS virtual: ").append(BlackBoxCore.get().isInstalled(GMS_PKG, userId)).append("\n");
+        sb.append("Play Games virtual: ").append(BlackBoxCore.get().isInstalled(PLAY_GAMES_PKG, userId)).append("\n");
+        sb.append("\n");
+
+        // 2. AccountAuthenticator service query
+        sb.append("--- AccountAuthenticator Service Query ---\n");
+        Intent authIntent = new Intent("android.accounts.AccountAuthenticator");
+
+        try {
+            List<ResolveInfo> virtualServices = BlackBoxCore.getBPackageManager()
+                    .queryIntentServices(authIntent, 0, userId);
+            sb.append("virtualAuthenticatorServicesCount: ").append(virtualServices != null ? virtualServices.size() : 0).append("\n");
+
+            if (virtualServices != null && !virtualServices.isEmpty()) {
+                for (ResolveInfo ri : virtualServices) {
+                    if (ri.serviceInfo != null) {
+                        sb.append("  service: ").append(ri.serviceInfo.packageName)
+                                .append("/").append(ri.serviceInfo.name).append("\n");
+                        sb.append("    processName: ").append(ri.serviceInfo.processName != null ? ri.serviceInfo.processName : ri.serviceInfo.packageName).append("\n");
+                        sb.append("    exported: ").append(ri.serviceInfo.exported).append("\n");
+                        sb.append("    permission: ").append(ri.serviceInfo.permission != null ? ri.serviceInfo.permission : "none").append("\n");
+                    }
+                }
+            } else {
+                sb.append("  (No services found for AccountAuthenticator intent)\n");
+            }
+        } catch (Exception e) {
+            sb.append("virtualAuthenticatorServicesCount: ERROR - ").append(e.getMessage()).append("\n");
+        }
+
+        // 3. Host AccountManager authenticator types
+        sb.append("\n--- Host AccountManager Authenticator Types ---\n");
+        try {
+            AccountManager am = AccountManager.get(BlackBoxCore.getContext());
+            if (am != null) {
+                AuthenticatorDescription[] authTypes = am.getAuthenticatorTypes();
+                sb.append("hostAuthenticatorTypesCount: ").append(authTypes != null ? authTypes.length : 0).append("\n");
+                if (authTypes != null) {
+                    for (AuthenticatorDescription desc : authTypes) {
+                        if ("com.google".equals(desc.type)) {
+                            sb.append("  Google authenticator: type=").append(desc.type)
+                                    .append(" package=").append(desc.packageName).append("\n");
+                        }
+                    }
+                }
+            }
+        } catch (Exception e) {
+            sb.append("ERROR: ").append(e.getMessage()).append("\n");
+        }
+
+        // 4. Direct GMS service lookup
+        sb.append("\n--- Direct GMS Authenticator Service Lookup ---\n");
+        String[] gmsAuthServiceNames = {
+                "com.google.android.gms.auth.DefaultAuthDelegateService",
+                "com.google.android.gms.auth.GetToken",
+                "com.google.android.gms.auth.GoogleAuthServiceImpl",
+                "com.google.android.gms.auth.account.be.PlatformAccountManagerService"
+        };
+
+        for (String serviceName : gmsAuthServiceNames) {
+            try {
+                ComponentName cn = new ComponentName(GMS_PKG, serviceName);
+                ServiceInfo info = BlackBoxCore.getBPackageManager().getServiceInfo(cn, 0, userId);
+                if (info != null) {
+                    sb.append("  ").append(serviceName).append(": FOUND")
+                            .append(" (exported=").append(info.exported)
+                            .append(", permission=").append(info.permission != null ? info.permission : "none")
+                            .append(")\n");
+                } else {
+                    sb.append("  ").append(serviceName).append(": NOT FOUND\n");
+                }
+            } catch (Exception e) {
+                sb.append("  ").append(serviceName).append(": ERROR - ").append(e.getMessage()).append("\n");
+            }
+        }
+
+        // 5. GSF login service
+        sb.append("\n--- GSF Login Service Lookup ---\n");
+        try {
+            // GSF also provides an account authenticator
+            ComponentName gsfLoginCn = new ComponentName(GSF_PKG,
+                    "com.google.android.gsf.login.GoogleLoginService");
+            ServiceInfo gsfInfo = BlackBoxCore.getBPackageManager().getServiceInfo(gsfLoginCn, 0, userId);
+            if (gsfInfo != null) {
+                sb.append("  GoogleLoginService: FOUND")
+                        .append(" (exported=").append(gsfInfo.exported)
+                        .append(", permission=").append(gsfInfo.permission != null ? gsfInfo.permission : "none")
+                        .append(")\n");
+            } else {
+                sb.append("  GoogleLoginService: NOT FOUND\n");
+            }
+        } catch (Exception e) {
+            sb.append("  GoogleLoginService: ERROR - ").append(e.getMessage()).append("\n");
+        }
+
+        // 6. Result
+        sb.append("\n--- Result ---\n");
+        try {
+            List<ResolveInfo> services = BlackBoxCore.getBPackageManager()
+                    .queryIntentServices(authIntent, 0, userId);
+            if (services != null && !services.isEmpty()) {
+                sb.append("Result: AUTHENTICATOR SERVICE PRESENT\n");
+                sb.append(services.size()).append(" AccountAuthenticator service(s) found in virtual PackageManager.\n");
+            } else {
+                sb.append("Result: NOT READY\n");
+                sb.append("Reason: No virtual Google AccountAuthenticator service found.\n");
+                sb.append("Play Games cannot discover Google's authenticator service through PackageManager.\n");
+                sb.append("This is likely why Play Games hangs during sign-in.\n");
+                sb.append("\nPossible fixes:\n");
+                sb.append("- Ensure GMS services with AccountAuthenticator intent-filter are registered in virtual PM\n");
+                sb.append("- Check that BPackageManagerService.componentResolver has GMS services\n");
+                sb.append("- Verify the queryIntentServices proxy hook is working\n");
+            }
+        } catch (Exception e) {
+            sb.append("Result: ERROR - ").append(e.getMessage()).append("\n");
+        }
+
+        sb.append("\n=== End of Google Authenticator Diagnostic ===");
+        return sb.toString();
     }
 
     // ======================== Launch Test ========================
