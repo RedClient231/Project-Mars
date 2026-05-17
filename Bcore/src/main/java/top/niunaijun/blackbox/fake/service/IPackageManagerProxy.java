@@ -103,6 +103,40 @@ public class IPackageManagerProxy extends BinderInvocationStub {
         }
     }
 
+    @ProxyMethod("queryIntentActivities")
+    public static class QueryIntentActivities extends MethodHook {
+        @Override
+        protected Object hook(Object who, Method method, Object[] args) throws Throwable {
+            Intent intent = MethodParameterUtils.getFirstParam(args, Intent.class);
+            String resolvedType = MethodParameterUtils.getFirstParam(args, String.class);
+            Integer flags = MethodParameterUtils.getFirstParam(args, Integer.class);
+
+            // Check the virtual package manager first.
+            // This is critical for Google packages (GMS, Play Games) because
+            // games use queryIntentActivities to discover sign-in activities.
+            if (intent != null) {
+                List<ResolveInfo> virtualResults = BlackBoxCore.getBPackageManager()
+                        .queryIntentActivities(intent, flags != null ? flags : 0,
+                                resolvedType, BlackBoxCore.getUserId());
+                if (virtualResults != null && !virtualResults.isEmpty()) {
+                    Slog.d(TAG, "queryIntentActivities: Found " + virtualResults.size()
+                            + " results in virtual PM for intent: " + intent.getAction()
+                            + " pkg=" + intent.getPackage());
+                    if (BuildCompat.isN()) {
+                        return ParceledListSliceCompat.create(virtualResults);
+                    }
+                    return virtualResults;
+                }
+            }
+
+            // Fall through to system package manager
+            Object result = method.invoke(who, args);
+            Slog.d(TAG, "queryIntentActivities: No virtual results, returning system results for intent: "
+                    + (intent != null ? intent.getAction() : "null"));
+            return result;
+        }
+    }
+
     @ProxyMethod("resolveService")
     public static class ResolveService extends MethodHook {
         @Override

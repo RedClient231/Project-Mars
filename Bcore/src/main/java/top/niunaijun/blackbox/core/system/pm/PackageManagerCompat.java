@@ -66,6 +66,12 @@ public class PackageManagerCompat {
         pi.sharedUserLabel = p.mSharedUserLabel;
         pi.applicationInfo = generateApplicationInfo(p, flags, state, userId);
 
+        // Expose split APK names and code paths in PackageInfo
+        // This is critical for Google packages that use feature/density/ABI splits
+        if (p.splitNames != null && p.splitNames.length > 0) {
+            pi.splitNames = p.splitNames;
+        }
+
         pi.firstInstallTime = firstInstallTime;
         pi.lastUpdateTime = lastUpdateTime;
         if (!p.requestedPermissions.isEmpty()) {
