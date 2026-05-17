@@ -8,6 +8,7 @@ on:
       - feature/xapk-import
       - feature/full-resource-split-xapk
       - feature/real-gms-playgames-support
+      - feature/gms-diagnostics-and-login-fix
 
 jobs:
   build:
