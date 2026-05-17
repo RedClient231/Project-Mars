@@ -67,4 +67,16 @@
     <string name="disable_gms">Disable Service</string>
     <string name="disable_gms_hint">Clear the current Google service environment? Google service data will be cleared.</string>
     <string name="no_gms">Currently, there is no Google service environment on mobile phones.</string>
+    <string name="gms_diagnostic">GMS Diagnostic</string>
+    <string name="gms_copy_diagnostic">Copy Diagnostic</string>
+    <string name="gms_diagnostic_copied">Diagnostic copied to clipboard</string>
+    <string name="gms_play_games_missing">Google Play Games is missing. Many games require Google Play Games for sign-in.</string>
+    <string name="gms_play_games_missing_fix">Install Google Play Games on your real device and reinstall GMS here, or import a Play Games APK/XAPK manually.</string>
+    <string name="gms_import_play_games">Install Play Games APK/XAPK</string>
+    <string name="gms_wrong_package">Selected file is not Google Play Games.\nExpected package: com.google.android.play.games\nGot: %s</string>
+    <string name="gms_import_success">Google Play Games installed successfully</string>
+    <string name="gms_import_failed">Failed to install Google Play Games: %s</string>
+    <string name="gms_game_login_readiness">Game Login Readiness</string>
+    <string name="gms_not_ready">NOT READY</string>
+    <string name="gms_ready">READY</string>
 </resources>

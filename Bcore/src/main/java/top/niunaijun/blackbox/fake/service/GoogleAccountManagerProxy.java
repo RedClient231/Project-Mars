@@ -312,7 +312,9 @@ public class GoogleAccountManagerProxy extends ClassInvocationStub {
                 return method.invoke(who, args);
             } catch (Exception e) {
                 Slog.w(TAG, "GoogleAccountManager: GetAuthenticatorTypes error", e);
-                return new String[]{"com.google"};
+                // Must return AuthenticatorDescription[] not String[].
+                // Return empty array rather than wrong type.
+                return new android.accounts.AuthenticatorDescription[0];
             }
         }
     }

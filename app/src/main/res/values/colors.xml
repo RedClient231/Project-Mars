@@ -7,4 +7,8 @@
     <color name="primary_text">#212121</color>
     <color name="secondary_text">#757575</color>
     <color name="white">#FFFFFFFF</color>
+    <color name="warning_red">#D32F2F</color>
+    <color name="warning_red_background">#FFEBEE</color>
+    <color name="success_green">#388E3C</color>
+    <color name="success_green_background">#E8F5E9</color>
 </resources>

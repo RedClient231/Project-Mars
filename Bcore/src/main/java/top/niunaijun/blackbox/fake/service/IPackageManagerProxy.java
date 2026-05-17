@@ -308,6 +308,39 @@ public class IPackageManagerProxy extends BinderInvocationStub {
         }
     }
 
+    @ProxyMethod("queryIntentActivities")
+    public static class QueryIntentActivities extends MethodHook {
+        @Override
+        protected Object hook(Object who, Method method, Object[] args) throws Throwable {
+            Intent intent = MethodParameterUtils.getFirstParam(args, Intent.class);
+            String resolvedType = MethodParameterUtils.getFirstParam(args, String.class);
+            Integer flags = MethodParameterUtils.getFirstParam(args, Integer.class);
+
+            // Check the virtual package manager first.
+            // This is critical for Google Play Games sign-in discovery —
+            // games look for Activities declared in Play Games via Intent resolution.
+            if (intent != null) {
+                List<ResolveInfo> resolves = BlackBoxCore.getBPackageManager()
+                        .queryIntentActivities(intent,
+                                flags != null ? flags : 0,
+                                resolvedType,
+                                BActivityThread.getUserId());
+
+                if (resolves != null && !resolves.isEmpty()) {
+                    Slog.d(TAG, "queryIntentActivities: Found " + resolves.size()
+                            + " results in virtual PM for intent: " + intent.getAction());
+                    if (BuildCompat.isN()) {
+                        return ParceledListSliceCompat.create(resolves);
+                    }
+                    return resolves;
+                }
+            }
+
+            // Fall through to system package manager
+            return method.invoke(who, args);
+        }
+    }
+
     @ProxyMethod("queryIntentReceivers")
     public static class QueryBroadcastReceivers extends MethodHook {
         @Override

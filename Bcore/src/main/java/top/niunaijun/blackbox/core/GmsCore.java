@@ -1,6 +1,9 @@
 package top.niunaijun.blackbox.core;
 
+import android.content.pm.ApplicationInfo;
+import android.content.pm.PackageInfo;
 import android.content.pm.PackageManager;
+import android.os.Build;
 
 import java.util.ArrayList;
 import java.util.Arrays;
@@ -45,13 +48,24 @@ public class GmsCore {
             VENDING_PKG
     ));
 
+    /**
+     * Packages required for game login to work.
+     * All four must be present for Play Games sign-in to function.
+     */
+    public static final Set<String> GAME_LOGIN_REQUIRED = new HashSet<>(Arrays.asList(
+            GSF_PKG,
+            GMS_PKG,
+            VENDING_PKG,
+            PLAY_GAMES_PKG
+    ));
+
     static {
         GOOGLE_APP.add(VENDING_PKG);
         GOOGLE_APP.add(PLAY_GAMES_PKG);
         GOOGLE_APP.add("com.google.android.wearable.app");
         GOOGLE_APP.add("com.google.android.wearable.app.cn");
 
-        
+
         GOOGLE_SERVICE.add(GMS_PKG);
         GOOGLE_SERVICE.add(GSF_PKG);
         GOOGLE_SERVICE.add("com.google.android.gsf.login");
@@ -130,6 +144,15 @@ public class GmsCore {
                             + ". Please install Google Play Services and Play Store on your phone first.");
         }
 
+        // Check if Play Games was skipped (not on host device) — game login won't work without it
+        if (skippedPackages.contains(PLAY_GAMES_PKG)) {
+            Slog.w(TAG, "GMS core installed, but Google Play Games is missing on host device");
+            return new InstallResult().installError(
+                    "GMS core installed, but Google Play Games is missing. Game login may not work. "
+                    + "Install Google Play Games on your real device and reinstall GMS here, "
+                    + "or import a Play Games APK/XAPK manually via GMS Manager.");
+        }
+
         Slog.d(TAG, "GMS install complete. Installed: " + installedPackages
                 + ", Skipped (optional): " + skippedPackages);
         return new InstallResult();
@@ -182,24 +205,249 @@ public class GmsCore {
         return BlackBoxCore.get().isInstalled(packageName, userId);
     }
 
+    // ======================== ABI Detection ========================
+
     /**
-     * Get diagnostic info about which Google packages are installed.
+     * Detect if the given ApplicationInfo points to a 64-bit ARM (arm64-v8a) native library.
+     */
+    public static boolean detectArm64(ApplicationInfo appInfo) {
+        if (appInfo == null) return false;
+
+        // Check nativeLibraryDir
+        if (appInfo.nativeLibraryDir != null && appInfo.nativeLibraryDir.contains("/arm64")) {
+            return true;
+        }
+
+        // Check splitSourceDirs for arm64 splits
+        if (appInfo.splitSourceDirs != null) {
+            for (String split : appInfo.splitSourceDirs) {
+                if (split != null) {
+                    String lower = split.toLowerCase();
+                    if (lower.contains("arm64_v8a") || lower.contains("arm64-v8a")) {
+                        return true;
+                    }
+                }
+            }
+        }
+
+        // Check sourceDir for arm64 indicator
+        if (appInfo.sourceDir != null && appInfo.sourceDir.toLowerCase().contains("arm64")) {
+            return true;
+        }
+
+        return false;
+    }
+
+    /**
+     * Detect if the given ApplicationInfo points to a 32-bit ARM (armeabi-v7a) native library.
+     */
+    public static boolean detectArmv7(ApplicationInfo appInfo) {
+        if (appInfo == null) return false;
+
+        // Check nativeLibraryDir — must contain /arm or /armeabi but NOT /arm64
+        if (appInfo.nativeLibraryDir != null) {
+            if ((appInfo.nativeLibraryDir.contains("/arm") || appInfo.nativeLibraryDir.contains("/armeabi"))
+                    && !appInfo.nativeLibraryDir.contains("/arm64")) {
+                return true;
+            }
+        }
+
+        // Check splitSourceDirs for armeabi_v7a splits
+        if (appInfo.splitSourceDirs != null) {
+            for (String split : appInfo.splitSourceDirs) {
+                if (split != null) {
+                    String lower = split.toLowerCase();
+                    if (lower.contains("armeabi_v7a") || lower.contains("armeabi-v7a")) {
+                        return true;
+                    }
+                }
+            }
+        }
+
+        return false;
+    }
+
+    // ======================== Diagnostics ========================
+
+    /**
+     * Get comprehensive diagnostic info about Google packages on host and virtual.
+     * Reports Android version, ABI info, and per-package details.
      */
     public static String getGmsDiagnosticInfo(int userId) {
         StringBuilder sb = new StringBuilder();
-        sb.append("GMS Diagnostic for user ").append(userId).append(":\n");
-        for (String pkg : GOOGLE_INSTALL_ORDER) {
-            boolean onHost = false;
+        sb.append("=== GMS Diagnostic Report ===\n");
+        sb.append("User ID: ").append(userId).append("\n");
+        sb.append("Android version: ").append(Build.VERSION.RELEASE).append(" (SDK ").append(Build.VERSION.SDK_INT).append(")\n");
+        sb.append("Process 64-bit: ").append(BlackBoxCore.is64Bit()).append("\n");
+        sb.append("Virtual user: ").append(userId).append("\n");
+        sb.append("\n");
+
+        String[] googlePackages = {GSF_PKG, GMS_PKG, VENDING_PKG, PLAY_GAMES_PKG};
+        String[] googleLabels = {"GSF", "GMS", "Play Store", "Play Games"};
+
+        for (int i = 0; i < googlePackages.length; i++) {
+            String pkg = googlePackages[i];
+            String label = googleLabels[i];
+
+            sb.append("--- ").append(label).append(" (").append(pkg).append(") ---\n");
+
+            // Host info
+            ApplicationInfo hostAppInfo = null;
+            PackageInfo hostPkgInfo = null;
+            boolean hostInstalled = false;
             try {
-                BlackBoxCore.getContext().getPackageManager().getApplicationInfo(pkg, 0);
-                onHost = true;
+                hostAppInfo = BlackBoxCore.getContext().getPackageManager().getApplicationInfo(pkg, 0);
+                hostPkgInfo = BlackBoxCore.getContext().getPackageManager().getPackageInfo(pkg, 0);
+                hostInstalled = true;
             } catch (PackageManager.NameNotFoundException ignored) {}
-            boolean inVirtual = BlackBoxCore.get().isInstalled(pkg, userId);
-            sb.append("  ").append(pkg)
-                    .append(": host=").append(onHost)
-                    .append(", virtual=").append(inVirtual)
-                    .append("\n");
+
+            sb.append("  [Host]\n");
+            sb.append("    installed: ").append(hostInstalled).append("\n");
+            if (hostInstalled && hostAppInfo != null) {
+                sb.append("    sourceDir: ").append(hostAppInfo.sourceDir).append("\n");
+                sb.append("    versionName: ").append(hostPkgInfo != null ? hostPkgInfo.versionName : "unknown").append("\n");
+                sb.append("    versionCode: ").append(hostPkgInfo != null ? hostPkgInfo.longVersionCode : "unknown").append("\n");
+                sb.append("    splitSourceDirs: ").append(hostAppInfo.splitSourceDirs != null ? Arrays.toString(hostAppInfo.splitSourceDirs) : "none").append("\n");
+                sb.append("    nativeLibraryDir: ").append(hostAppInfo.nativeLibraryDir).append("\n");
+                sb.append("    hasArm64: ").append(detectArm64(hostAppInfo)).append("\n");
+                sb.append("    hasArmv7: ").append(detectArmv7(hostAppInfo)).append("\n");
+            }
+
+            // Virtual info
+            boolean virtualInstalled = BlackBoxCore.get().isInstalled(pkg, userId);
+            sb.append("  [Virtual]\n");
+            sb.append("    installed: ").append(virtualInstalled).append("\n");
+            if (virtualInstalled) {
+                try {
+                    ApplicationInfo virtualAppInfo = BlackBoxCore.getBPackageManager().getApplicationInfo(pkg, 0, userId);
+                    if (virtualAppInfo != null) {
+                        sb.append("    sourceDir: ").append(virtualAppInfo.sourceDir).append("\n");
+                        sb.append("    nativeLibraryDir: ").append(virtualAppInfo.nativeLibraryDir).append("\n");
+                        sb.append("    splitSourceDirs: ").append(virtualAppInfo.splitSourceDirs != null ? Arrays.toString(virtualAppInfo.splitSourceDirs) : "none").append("\n");
+                        sb.append("    hasArm64: ").append(detectArm64(virtualAppInfo)).append("\n");
+                        sb.append("    hasArmv7: ").append(detectArmv7(virtualAppInfo)).append("\n");
+                    }
+                } catch (Exception e) {
+                    sb.append("    (could not retrieve virtual ApplicationInfo: ").append(e.getMessage()).append(")\n");
+                }
+                try {
+                    PackageInfo virtualPkgInfo = BlackBoxCore.getBPackageManager().getPackageInfo(pkg, 0, userId);
+                    if (virtualPkgInfo != null) {
+                        sb.append("    versionName: ").append(virtualPkgInfo.versionName).append("\n");
+                        sb.append("    versionCode: ").append(virtualPkgInfo.longVersionCode).append("\n");
+                    }
+                } catch (Exception e) {
+                    sb.append("    versionName: unknown\n");
+                    sb.append("    versionCode: unknown\n");
+                }
+            }
+
+            sb.append("\n");
         }
+
+        sb.append("=== End of Diagnostic Report ===");
         return sb.toString();
+    }
+
+    // ======================== Game Login Readiness ========================
+
+    /**
+     * Get a detailed game login readiness report for the given virtual user.
+     * Checks that all required Google packages are installed and ABI-compatible.
+     */
+    public static String getGameLoginReadinessReport(int userId) {
+        StringBuilder sb = new StringBuilder();
+        sb.append("=== Game Login Readiness Report ===\n");
+        sb.append("User ID: ").append(userId).append("\n\n");
+
+        boolean allInstalled = true;
+        boolean abiCompatible = true;
+        String missingPkgs = "";
+
+        // Check each required package
+        String[] requiredPkgs = {GSF_PKG, GMS_PKG, VENDING_PKG, PLAY_GAMES_PKG};
+        String[] requiredLabels = {"GSF", "GMS (Play Services)", "Play Store", "Play Games"};
+
+        for (int i = 0; i < requiredPkgs.length; i++) {
+            String pkg = requiredPkgs[i];
+            String label = requiredLabels[i];
+            boolean virtualInstalled = BlackBoxCore.get().isInstalled(pkg, userId);
+            sb.append(label).append(": ").append(virtualInstalled ? "INSTALLED" : "MISSING").append("\n");
+            if (!virtualInstalled) {
+                allInstalled = false;
+                if (!missingPkgs.isEmpty()) missingPkgs += ", ";
+                missingPkgs += label;
+            }
+        }
+
+        // ABI compatibility check
+        boolean is64BitProcess = BlackBoxCore.is64Bit();
+        sb.append("\nProcess architecture: ").append(is64BitProcess ? "64-bit" : "32-bit").append("\n");
+
+        if (!is64BitProcess) {
+            // 32-bit process: host GMS must have ARMv7 libraries
+            try {
+                ApplicationInfo gmsAppInfo = BlackBoxCore.getContext().getPackageManager().getApplicationInfo(GMS_PKG, 0);
+                boolean hostHasArmv7 = detectArmv7(gmsAppInfo);
+                sb.append("Host GMS ARMv7 support: ").append(hostHasArmv7).append("\n");
+                if (!hostHasArmv7) {
+                    abiCompatible = false;
+                    sb.append("WARNING: ARMv7 GMS login is not supported on this device because host Google packages do not include armeabi-v7a splits. Use the arm64-v8a build.\n");
+                }
+            } catch (PackageManager.NameNotFoundException e) {
+                abiCompatible = false;
+                sb.append("WARNING: Cannot check host GMS ABI (package not found).\n");
+            }
+        }
+
+        sb.append("\n--- Result ---\n");
+        if (allInstalled && abiCompatible) {
+            sb.append("Result: READY\n");
+            sb.append("All Google packages are installed and ABI-compatible.\n");
+        } else {
+            sb.append("Result: NOT READY\n");
+            if (!allInstalled) {
+                sb.append("Reason: Missing packages: ").append(missingPkgs).append("\n");
+                sb.append("Fix: Install the missing Google packages. Run GMS install again or import missing APKs manually via GMS Manager.\n");
+            }
+            if (!abiCompatible) {
+                sb.append("Reason: ABI incompatibility — ARMv7 GMS login is not supported on this device because host Google packages do not include armeabi-v7a splits. Use the arm64-v8a build.\n");
+                sb.append("Fix: Use a device with ARMv7 Google Play Services, or switch to a 64-bit environment.\n");
+            }
+        }
+
+        sb.append("\n=== End of Report ===");
+        return sb.toString();
+    }
+
+    /**
+     * Quick boolean check if game login is ready for the given virtual user.
+     */
+    public static boolean isGameLoginReady(int userId) {
+        // All four required packages must be installed
+        if (!BlackBoxCore.get().isInstalled(GSF_PKG, userId)) return false;
+        if (!BlackBoxCore.get().isInstalled(GMS_PKG, userId)) return false;
+        if (!BlackBoxCore.get().isInstalled(VENDING_PKG, userId)) return false;
+        if (!BlackBoxCore.get().isInstalled(PLAY_GAMES_PKG, userId)) return false;
+
+        // ABI compatibility: 32-bit process needs ARMv7 host GMS
+        boolean is64BitProcess = BlackBoxCore.is64Bit();
+        if (!is64BitProcess) {
+            try {
+                ApplicationInfo gmsAppInfo = BlackBoxCore.getContext().getPackageManager().getApplicationInfo(GMS_PKG, 0);
+                if (!detectArmv7(gmsAppInfo)) return false;
+            } catch (PackageManager.NameNotFoundException e) {
+                return false;
+            }
+        }
+
+        return true;
+    }
+
+    /**
+     * Check if Play Games is missing in the virtual user.
+     */
+    public static boolean isPlayGamesMissing(int userId) {
+        return !BlackBoxCore.get().isInstalled(PLAY_GAMES_PKG, userId);
     }
 }
