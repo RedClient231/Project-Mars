@@ -10,6 +10,8 @@ import java.util.Map;
 
 import black.android.accounts.BRIAccountManagerStub;
 import black.android.os.BRServiceManager;
+import top.niunaijun.blackbox.BlackBoxCore;
+import top.niunaijun.blackbox.app.BActivityThread;
 import top.niunaijun.blackbox.fake.frameworks.BAccountManager;
 import top.niunaijun.blackbox.fake.hook.BinderInvocationStub;
 import top.niunaijun.blackbox.fake.hook.MethodHook;
@@ -48,6 +50,19 @@ public class IAccountManagerProxy extends BinderInvocationStub {
     public Object invoke(Object proxy, Method method, Object[] args) throws Throwable {
         Slog.d(TAG, "call " + method.getName());
         return super.invoke(proxy, method, args);
+    }
+
+    /**
+     * Check if real GMS is installed in the current virtual user.
+     * Used to determine whether host account passthrough should be attempted.
+     */
+    private static boolean isRealGmsInstalledInVirtual() {
+        try {
+            int userId = BActivityThread.getUserId();
+            return BlackBoxCore.get().isInstalled("com.google.android.gms", userId);
+        } catch (Exception e) {
+            return false;
+        }
     }
 
     @ProxyMethod("getPassword")
@@ -100,7 +115,29 @@ public class IAccountManagerProxy extends BinderInvocationStub {
 
         @Override
         protected Object hook(Object who, Method method, Object[] args) throws Throwable {
-            BAccountManager.get().getAccountByTypeAndFeatures((IAccountManagerResponse) args[0], (String) args[1], (String[]) args[2]);
+            String accountType = (String) args[1];
+
+            // First, try the virtual account manager
+            BAccountManager.get().getAccountByTypeAndFeatures((IAccountManagerResponse) args[0], accountType, (String[]) args[2]);
+
+            // If virtual has no Google accounts and real GMS is installed, attempt host passthrough.
+            // Note: getAccountByTypeAndFeatures is async (uses IAccountManagerResponse callback),
+            // so we let the virtual handler run first. If it returns empty results for Google type,
+            // the host passthrough in getAccountsAsUser will handle subsequent queries.
+            if ("com.google".equals(accountType) && isRealGmsInstalledInVirtual()) {
+                try {
+                    Account[] virtualAccounts = BAccountManager.get().getAccountsAsUser(accountType);
+                    if (virtualAccounts == null || virtualAccounts.length == 0) {
+                        Slog.d(TAG, "getAccountByTypeAndFeatures: Virtual had 0 Google accounts, " +
+                                "host passthrough will be needed for subsequent account queries");
+                        GoogleAccountManagerProxy.ProxyEventTracker.logEvent(
+                                "getAccountByTypeAndFeatures", BActivityThread.getAppProcessName(),
+                                accountType, 0, null, null, true);
+                    }
+                } catch (Exception e) {
+                    Slog.w(TAG, "getAccountByTypeAndFeatures: Error checking virtual accounts", e);
+                }
+            }
             return 0;
         }
     }
@@ -110,7 +147,26 @@ public class IAccountManagerProxy extends BinderInvocationStub {
 
         @Override
         protected Object hook(Object who, Method method, Object[] args) throws Throwable {
-            BAccountManager.get().getAccountsByFeatures((IAccountManagerResponse) args[0], (String) args[1], (String[]) args[2]);
+            String accountType = (String) args[1];
+
+            // First, try the virtual account manager
+            BAccountManager.get().getAccountsByFeatures((IAccountManagerResponse) args[0], accountType, (String[]) args[2]);
+
+            // Log if host passthrough would be needed
+            if ("com.google".equals(accountType) && isRealGmsInstalledInVirtual()) {
+                try {
+                    Account[] virtualAccounts = BAccountManager.get().getAccountsAsUser(accountType);
+                    if (virtualAccounts == null || virtualAccounts.length == 0) {
+                        Slog.d(TAG, "getAccountsByFeatures: Virtual had 0 Google accounts, " +
+                                "host passthrough will be needed for subsequent account queries");
+                        GoogleAccountManagerProxy.ProxyEventTracker.logEvent(
+                                "getAccountsByFeatures", BActivityThread.getAppProcessName(),
+                                accountType, 0, null, null, true);
+                    }
+                } catch (Exception e) {
+                    Slog.w(TAG, "getAccountsByFeatures: Error checking virtual accounts", e);
+                }
+            }
             return 0;
         }
     }
@@ -120,7 +176,32 @@ public class IAccountManagerProxy extends BinderInvocationStub {
 
         @Override
         protected Object hook(Object who, Method method, Object[] args) throws Throwable {
-            return BAccountManager.get().getAccountsAsUser((String) args[0]);
+            String accountType = (String) args[0];
+
+            // Try virtual accounts first
+            Account[] virtualAccounts = BAccountManager.get().getAccountsAsUser(accountType);
+
+            // If virtual has no Google accounts and real GMS is installed, try host passthrough
+            if ((virtualAccounts == null || virtualAccounts.length == 0)
+                    && "com.google".equals(accountType)
+                    && isRealGmsInstalledInVirtual()) {
+                try {
+                    Account[] hostAccounts = (Account[]) method.invoke(who, args);
+                    if (hostAccounts != null && hostAccounts.length > 0) {
+                        Slog.d(TAG, "getAccountsAsUser: Virtual had 0 Google accounts, forwarding " + hostAccounts.length + " from host");
+                        GoogleAccountManagerProxy.ProxyEventTracker.logEvent(
+                                "getAccountsAsUser", BActivityThread.getAppProcessName(),
+                                "com.google", hostAccounts.length, null, null, true);
+                        return hostAccounts;
+                    }
+                } catch (Exception e) {
+                    Slog.w(TAG, "getAccountsAsUser: Host passthrough failed", e);
+                    GoogleAccountManagerProxy.ProxyEventTracker.logEvent(
+                            "getAccountsAsUser", BActivityThread.getAppProcessName(),
+                            "com.google", 0, e.getClass().getSimpleName(), e.getMessage(), false);
+                }
+            }
+            return virtualAccounts;
         }
     }
 
@@ -251,12 +332,25 @@ public class IAccountManagerProxy extends BinderInvocationStub {
 
         @Override
         protected Object hook(Object who, Method method, Object[] args) throws Throwable {
+            String accountType = (String) args[1];
+
+            // Delegate to virtual BAccountManager first
             BAccountManager.get().addAccount((IAccountManagerResponse) args[0],
-                    (String) args[1],
+                    accountType,
                     (String) args[2],
                     (String[]) args[3],
                     (boolean) args[4],
                     (Bundle) args[5]);
+
+            // When real GMS is installed and the account type is Google,
+            // log that host passthrough may be needed if the virtual authenticator fails
+            if ("com.google".equals(accountType) && isRealGmsInstalledInVirtual()) {
+                Slog.d(TAG, "addAccount: Google account add requested with real GMS installed. " +
+                        "If virtual authenticator fails, host system will be the fallback.");
+                GoogleAccountManagerProxy.ProxyEventTracker.logEvent(
+                        "addAccount", BActivityThread.getAppProcessName(),
+                        accountType, 0, null, null, false);
+            }
             return 0;
         }
     }

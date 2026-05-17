@@ -145,6 +145,17 @@
                     android:text="@string/gms_add_google_account"
                     android:textAllCaps="false" />
 
+            <!-- Test Google Account Visibility button -->
+            <Button
+                    android:id="@+id/btnTestAccountVisibility"
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:layout_marginStart="16dp"
+                    android:layout_marginEnd="16dp"
+                    android:layout_marginTop="4dp"
+                    android:text="@string/gms_test_account_visibility"
+                    android:textAllCaps="false" />
+
             <!-- Launch Test button -->
             <Button
                     android:id="@+id/btnTestLaunchPlayGames"

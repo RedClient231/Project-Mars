@@ -185,6 +185,13 @@ class GmsRepository {
     }
 
     /**
+     * Get host account visibility diagnostic comparing host and virtual Google accounts.
+     */
+    fun getHostAccountVisibilityDiagnostic(userId: Int): String {
+        return GmsCore.getHostAccountVisibilityDiagnostic(userId)
+    }
+
+    /**
      * Install a Play Games APK or XAPK file.
      * Verifies that the package name is exactly com.google.android.play.games.
      * Returns a result indicating success/failure and a message.

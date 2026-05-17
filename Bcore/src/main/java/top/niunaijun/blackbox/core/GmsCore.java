@@ -22,6 +22,7 @@ import java.util.List;
 import java.util.Set;
 
 import top.niunaijun.blackbox.BlackBoxCore;
+import top.niunaijun.blackbox.core.system.accounts.BAccountManagerService;
 import top.niunaijun.blackbox.entity.pm.InstallResult;
 import top.niunaijun.blackbox.utils.Slog;
 
@@ -1171,5 +1172,122 @@ public class GmsCore {
      */
     public static boolean isPlayGamesMissing(int userId) {
         return !BlackBoxCore.get().isInstalled(PLAY_GAMES_PKG, userId);
+    }
+
+    // ======================== Host Account Visibility Diagnostic ========================
+
+    /**
+     * Get a diagnostic comparing host Google accounts with virtual Google accounts.
+     * This is the key diagnostic for the "account passthrough" feature — if host
+     * Google accounts exist but virtual accounts are 0, the passthrough is not working.
+     *
+     * @param userId the virtual user ID
+     * @return formatted diagnostic string
+     */
+    public static String getHostAccountVisibilityDiagnostic(int userId) {
+        StringBuilder sb = new StringBuilder();
+        sb.append("=== Host Google Account Visibility Diagnostic ===\n");
+        sb.append("User ID: ").append(userId).append("\n\n");
+
+        boolean accountPassthroughUsed = false;
+
+        // 1. Query the HOST AccountManager
+        int hostAllAccountsCount = 0;
+        int hostGoogleAccountsCount = 0;
+        String hostGoogleAccountsMasked = "";
+        boolean hasGoogleAuthenticator = false;
+
+        try {
+            Context context = BlackBoxCore.getContext();
+            if (context == null) {
+                sb.append("ERROR: BlackBoxCore context is null\n");
+                sb.append("\n=== End of Host Google Account Visibility Diagnostic ===");
+                return sb.toString();
+            }
+
+            AccountManager am = AccountManager.get(context);
+            if (am == null) {
+                sb.append("ERROR: Host AccountManager is null\n");
+                sb.append("\n=== End of Host Google Account Visibility Diagnostic ===");
+                return sb.toString();
+            }
+
+            // All host accounts
+            Account[] allAccounts = am.getAccounts();
+            hostAllAccountsCount = allAccounts != null ? allAccounts.length : 0;
+
+            // Google accounts on host
+            Account[] googleAccounts = am.getAccountsByType("com.google");
+            hostGoogleAccountsCount = googleAccounts != null ? googleAccounts.length : 0;
+
+            if (googleAccounts != null && googleAccounts.length > 0) {
+                StringBuilder maskedBuilder = new StringBuilder();
+                for (Account account : googleAccounts) {
+                    if (maskedBuilder.length() > 0) maskedBuilder.append(", ");
+                    maskedBuilder.append(maskEmail(account.name));
+                }
+                hostGoogleAccountsMasked = maskedBuilder.toString();
+            }
+
+            // Authenticator types
+            AuthenticatorDescription[] authTypes = am.getAuthenticatorTypes();
+            if (authTypes != null) {
+                for (AuthenticatorDescription desc : authTypes) {
+                    if ("com.google".equals(desc.type)) {
+                        hasGoogleAuthenticator = true;
+                        break;
+                    }
+                }
+            }
+        } catch (SecurityException se) {
+            sb.append("ERROR: SecurityException querying host AccountManager - ").append(se.getMessage()).append("\n");
+            sb.append("The app may not have GET_ACCOUNTS permission.\n");
+            sb.append("Permission details: android.permission.GET_ACCOUNTS is required on Android 5 and below.\n");
+            sb.append("On Android 6+ it is a normal permission. On Android 11+ it may not be needed.\n");
+        } catch (Exception e) {
+            sb.append("ERROR: ").append(e.getClass().getSimpleName()).append(" querying host AccountManager - ").append(e.getMessage()).append("\n");
+        }
+
+        // 2. Query the VIRTUAL account system
+        int virtualGoogleAccountsCount = 0;
+        try {
+            Account[] virtualAccounts = BAccountManagerService.get()
+                    .getAccountsAsUser("com.google", userId);
+            virtualGoogleAccountsCount = virtualAccounts != null ? virtualAccounts.length : 0;
+        } catch (SecurityException se) {
+            sb.append("ERROR: SecurityException querying virtual accounts - ").append(se.getMessage()).append("\n");
+        } catch (Exception e) {
+            sb.append("ERROR: ").append(e.getClass().getSimpleName()).append(" querying virtual accounts - ").append(e.getMessage()).append("\n");
+        }
+
+        // Determine if passthrough would be used
+        accountPassthroughUsed = hostGoogleAccountsCount > 0 && virtualGoogleAccountsCount == 0;
+
+        // 3. Report
+        sb.append("hostAllAccountsCount: ").append(hostAllAccountsCount).append("\n");
+        sb.append("hostGoogleAccountsCount: ").append(hostGoogleAccountsCount).append("\n");
+        sb.append("hostGoogleAccountsMasked: ").append(hostGoogleAccountsMasked.isEmpty() ? "(none)" : hostGoogleAccountsMasked).append("\n");
+        sb.append("hasGoogleAuthenticator: ").append(hasGoogleAuthenticator).append("\n");
+        sb.append("\n");
+        sb.append("virtualGoogleAccountsCount: ").append(virtualGoogleAccountsCount).append("\n");
+        sb.append("accountPassthroughUsed: ").append(accountPassthroughUsed).append("\n");
+        sb.append("\n");
+
+        // 4. Diagnosis
+        if (hostGoogleAccountsCount > 0 && virtualGoogleAccountsCount == 0) {
+            sb.append("PROBLEM: Host Google accounts exist but are not visible to virtual apps.\n");
+            sb.append("FIX NEEDED: Account passthrough must forward host accounts to virtual AccountManager.\n");
+            sb.append("The IAccountManagerProxy should fall back to the real system AccountManager\n");
+            sb.append("when the virtual BAccountManagerService has no Google accounts.\n");
+        } else if (hostGoogleAccountsCount > 0 && virtualGoogleAccountsCount > 0) {
+            sb.append("OK: Both host and virtual have Google accounts. Passthrough may not be needed,\n");
+            sb.append("or passthrough is already working.\n");
+        } else if (hostGoogleAccountsCount == 0) {
+            sb.append("INFO: No Google accounts found on host device.\n");
+            sb.append("The user needs to add a Google account to the real device first.\n");
+        }
+
+        sb.append("\n=== End of Host Google Account Visibility Diagnostic ===");
+        return sb.toString();
     }
 }

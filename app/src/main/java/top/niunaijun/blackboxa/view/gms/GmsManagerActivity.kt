@@ -166,6 +166,21 @@ class GmsManagerActivity : LoadingActivity() {
             }
         }
 
+        viewModel.mAccountVisibilityLiveData.observe(this) { diagnosticText ->
+            hideLoading()
+            // Copy to clipboard
+            val clipboard = getSystemService(Context.CLIPBOARD_SERVICE) as android.content.ClipboardManager
+            val clip = ClipData.newPlainText("Account Visibility Diagnostic", diagnosticText)
+            clipboard.setPrimaryClip(clip)
+
+            // Also show in a dialog
+            MaterialDialog(this).show {
+                title(R.string.gms_test_account_visibility)
+                message(text = diagnosticText)
+                positiveButton(R.string.done)
+            }
+        }
+
         viewModel.getInstalledUser()
     }
 
@@ -218,6 +233,12 @@ class GmsManagerActivity : LoadingActivity() {
         viewBinding.btnAddGoogleAccount.setOnClickListener {
             showLoading()
             viewModel.testAddGoogleAccount(this)
+        }
+
+        // Test Google Account Visibility button
+        viewBinding.btnTestAccountVisibility.setOnClickListener {
+            showLoading()
+            viewModel.testGoogleAccountVisibility(currentUserId)
         }
 
         // Import Play Games button (bottom)

@@ -10,6 +10,7 @@ on:
       - feature/real-gms-playgames-support
       - feature/play-games-runtime-diagnostics
       - feature/google-accountmanager-service-fix
+      - feature/google-account-passthrough-fix
 
 jobs:
   build:

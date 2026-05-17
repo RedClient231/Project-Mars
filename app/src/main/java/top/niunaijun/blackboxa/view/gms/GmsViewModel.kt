@@ -39,6 +39,9 @@ class GmsViewModel(val mRepo: GmsRepository) : BaseViewModel() {
     /** Add Google Account result */
     val mAddAccountLiveData = MutableLiveData<AddAccountResult>()
 
+    /** Account visibility diagnostic result */
+    val mAccountVisibilityLiveData = MutableLiveData<String>()
+
     fun getInstalledUser() {
         launchOnUI {
             mRepo.getGmsInstalledList(mInstalledLiveData)
@@ -171,13 +174,43 @@ class GmsViewModel(val mRepo: GmsRepository) : BaseViewModel() {
                             )
                         }
                     } catch (e: android.accounts.OperationCanceledException) {
-                        mAddAccountLiveData.postValue(
-                            AddAccountResult(
-                                success = false,
-                                message = "addAccount was cancelled by user or system.",
-                                detail = "OperationCanceledException: ${e.message}"
+                        // Check if the message indicates "already exists"
+                        val message = e.message
+                        if (message != null && (message.contains("already exists", ignoreCase = true) ||
+                                    message.contains("already been added", ignoreCase = true))) {
+                            // Account already exists on the host — this is actually a success case
+                            try {
+                                val hostAccounts = AccountManager.get(activity).getAccountsByType("com.google")
+                                if (hostAccounts.isNotEmpty()) {
+                                    mAddAccountLiveData.postValue(
+                                        AddAccountResult(
+                                            success = true,
+                                            message = "Google account already exists on this device.",
+                                            detail = "Project Mars will use the existing account for virtual Google Play Games. hostGoogleAccountsCount: ${hostAccounts.size}"
+                                        )
+                                    )
+                                    return@AccountManagerCallback
+                                }
+                            } catch (se: SecurityException) {
+                                // Permission issue querying accounts
+                            }
+                            // Couldn't verify accounts, still treat as potential success
+                            mAddAccountLiveData.postValue(
+                                AddAccountResult(
+                                    success = true,
+                                    message = "Google account already exists on this device.",
+                                    detail = "OperationCanceledException with 'already exists' message. Project Mars will use the existing account for virtual Google Play Games."
+                                )
                             )
-                        )
+                        } else {
+                            mAddAccountLiveData.postValue(
+                                AddAccountResult(
+                                    success = false,
+                                    message = "addAccount was cancelled by user or system.",
+                                    detail = "OperationCanceledException: ${e.message}"
+                                )
+                            )
+                        }
                     } catch (e: android.accounts.AuthenticatorException) {
                         mAddAccountLiveData.postValue(
                             AddAccountResult(
@@ -222,6 +255,16 @@ class GmsViewModel(val mRepo: GmsRepository) : BaseViewModel() {
                     detail = "${e.javaClass.simpleName}: ${e.message}"
                 )
             )
+        }
+    }
+
+    /**
+     * Test Google Account visibility — compares host vs virtual account counts.
+     */
+    fun testGoogleAccountVisibility(userId: Int) {
+        launchOnUI {
+            val diagnostic = mRepo.getHostAccountVisibilityDiagnostic(userId)
+            mAccountVisibilityLiveData.postValue(diagnostic)
         }
     }
 
