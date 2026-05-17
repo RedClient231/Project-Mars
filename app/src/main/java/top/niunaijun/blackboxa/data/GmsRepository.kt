@@ -86,8 +86,8 @@ class GmsRepository {
      * Get AccountManager diagnostic info.
      * Reports accounts, Google accounts, authenticator types, and Google authenticator availability.
      */
-    fun getAccountDiagnostic(): String {
-        return GmsCore.getAccountDiagnostic()
+    fun getAccountDiagnostic(userId: Int): String {
+        return GmsCore.getAccountDiagnostic(userId)
     }
 
     /**
@@ -141,7 +141,7 @@ class GmsRepository {
     fun getComprehensiveRuntimeDiagnostic(userId: Int): String {
         val sb = StringBuilder()
 
-        sb.append(GmsCore.getAccountDiagnostic())
+        sb.append(GmsCore.getAccountDiagnostic(userId))
         sb.append("\n\n")
 
         sb.append(GmsCore.getGoogleAuthenticatorDiagnostic(userId))

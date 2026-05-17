@@ -93,9 +93,9 @@ class GmsViewModel(val mRepo: GmsRepository) : BaseViewModel() {
     /**
      * Get AccountManager diagnostic and copy to clipboard.
      */
-    fun getAccountDiagnostic() {
+    fun getAccountDiagnostic(userId: Int) {
         launchOnUI {
-            val diagnostic = mRepo.getAccountDiagnostic()
+            val diagnostic = mRepo.getAccountDiagnostic(userId)
             mAccountDiagnosticLiveData.postValue(diagnostic)
         }
     }

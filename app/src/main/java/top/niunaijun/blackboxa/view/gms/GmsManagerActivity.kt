@@ -192,7 +192,7 @@ class GmsManagerActivity : LoadingActivity() {
         // Copy Account diagnostic button
         viewBinding.btnCopyAccountDiagnostic.setOnClickListener {
             showLoading()
-            viewModel.getAccountDiagnostic()
+            viewModel.getAccountDiagnostic(currentUserId)
         }
 
         // Copy Authenticator diagnostic button

@@ -419,7 +419,7 @@ public class GmsCore {
      * but whether Google's authenticator can even run depends on whether GMS
      * services are properly resolved inside the virtual space.
      */
-    public static String getAccountDiagnostic() {
+    public static String getAccountDiagnostic(int userId) {
         StringBuilder sb = new StringBuilder();
         sb.append("=== Account Diagnostic ===\n");
         sb.append("(Queried from host AccountManager)\n\n");
