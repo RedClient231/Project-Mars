@@ -1,5 +1,7 @@
 package top.niunaijun.blackboxa.view.gms
 
+import android.content.ClipData
+import android.content.ClipboardManager
 import android.content.Context
 import android.content.Intent
 import android.os.Bundle
@@ -8,6 +10,7 @@ import androidx.lifecycle.ViewModelProvider
 import androidx.recyclerview.widget.LinearLayoutManager
 import cbfg.rvadapter.RVAdapter
 import com.afollestad.materialdialogs.MaterialDialog
+import top.niunaijun.blackbox.BlackBoxCore
 import top.niunaijun.blackboxa.R
 import top.niunaijun.blackboxa.bean.GmsBean
 import top.niunaijun.blackboxa.databinding.ActivityGmsBinding
@@ -73,6 +76,13 @@ class GmsManagerActivity : LoadingActivity() {
             }
         }
 
+        viewModel.mDiagnosticLiveData.observe(this) { diagInfo ->
+            hideLoading()
+            if (diagInfo != null) {
+                showDiagnosticDialog(diagInfo)
+            }
+        }
+
         viewModel.getInstalledUser()
     }
 
@@ -88,6 +98,47 @@ class GmsManagerActivity : LoadingActivity() {
             }
         viewBinding.recyclerView.layoutManager = LinearLayoutManager(this)
 
+    }
+
+    override fun onCreateOptionsMenu(menu: android.view.Menu?): Boolean {
+        menu?.add(0, MENU_DIAGNOSTIC, 0, R.string.gms_diagnostic)?.setShowAsAction(android.view.MenuItem.SHOW_AS_ACTION_NEVER)
+        return super.onCreateOptionsMenu(menu)
+    }
+
+    override fun onOptionsItemSelected(item: android.view.MenuItem): Boolean {
+        if (item.itemId == MENU_DIAGNOSTIC) {
+            showDiagnosticForUser0()
+            return true
+        }
+        return super.onOptionsItemSelected(item)
+    }
+
+    private fun showDiagnosticForUser0() {
+        // Get diagnostic for user 0 (the default user)
+        showLoading()
+        viewModel.loadDiagnosticInfo(0)
+    }
+
+    private fun showDiagnosticDialog(diagInfo: String) {
+        MaterialDialog(this).show {
+            title(R.string.gms_diagnostic)
+            message(text = diagInfo)
+            positiveButton(R.string.gms_copy_diagnostic) {
+                copyToClipboard(diagInfo)
+            }
+            negativeButton(R.string.done)
+        }
+    }
+
+    private fun copyToClipboard(text: String) {
+        try {
+            val clipboard = getSystemService(Context.CLIPBOARD_SERVICE) as ClipboardManager
+            val clip = ClipData.newPlainText("GMS Diagnostic", text)
+            clipboard.setPrimaryClip(clip)
+            toast(getString(R.string.gms_diagnostic_copied))
+        } catch (e: Exception) {
+            toast("Failed to copy: ${e.message}")
+        }
     }
 
     private fun installGms(userID: Int, checkbox: Switch){
@@ -120,6 +171,8 @@ class GmsManagerActivity : LoadingActivity() {
 
 
     companion object{
+        private const val MENU_DIAGNOSTIC = 100
+
         fun start(context: Context){
             val intent = Intent(context,GmsManagerActivity::class.java)
             context.startActivity(intent)

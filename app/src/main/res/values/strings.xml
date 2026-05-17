@@ -67,4 +67,7 @@
     <string name="disable_gms">Disable Service</string>
     <string name="disable_gms_hint">Clear the current Google service environment? Google service data will be cleared.</string>
     <string name="no_gms">Currently, there is no Google service environment on mobile phones.</string>
+    <string name="gms_diagnostic">GMS Diagnostic</string>
+    <string name="gms_copy_diagnostic">Copy</string>
+    <string name="gms_diagnostic_copied">Diagnostic copied to clipboard</string>
 </resources>

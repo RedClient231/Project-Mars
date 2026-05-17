@@ -2,12 +2,11 @@ package top.niunaijun.blackbox.fake.service;
 
 import android.accounts.Account;
 import android.accounts.AccountManager;
+import android.accounts.AuthenticatorDescription;
 import android.content.Context;
 import android.os.Bundle;
 
 import java.lang.reflect.Method;
-import java.util.ArrayList;
-import java.util.List;
 
 import top.niunaijun.blackbox.BlackBoxCore;
 import top.niunaijun.blackbox.fake.hook.ClassInvocationStub;
@@ -78,26 +77,17 @@ public class GoogleAccountManagerProxy extends ClassInvocationStub {
                     }
                 }
                 
-                // No real accounts found.
-                // When real GMS is installed, do NOT return mock accounts —
-                // the real sign-in flow should handle this.
-                if (isRealGmsInstalled()) {
-                    Slog.d(TAG, "GoogleAccountManager: No real accounts but real GMS installed, returning empty (no mock)");
-                    return new Account[0];
-                }
-                
-                // Only provide mock accounts as fallback when no real GMS is installed
-                // and only for basic compatibility (not for actual sign-in)
-                Slog.d(TAG, "GoogleAccountManager: No real accounts and no real GMS, returning mock accounts for basic compatibility");
-                return createMockGoogleAccounts();
+                // No real accounts found. Never return mock accounts — they cannot
+                // be used for real sign-in and only confuse apps into thinking
+                // an account exists when it doesn't.
+                Slog.d(TAG, "GoogleAccountManager: No real accounts found, returning empty (no mock)");
+                return new Account[0];
                 
             } catch (Exception e) {
                 Slog.w(TAG, "GoogleAccountManager: GetAccounts error", e);
-                if (isRealGmsInstalled()) {
-                    // With real GMS, return empty rather than fake accounts
-                    return new Account[0];
-                }
-                return createMockGoogleAccounts();
+                // Always return empty instead of mock accounts.
+                // Mock accounts can never be used for real sign-in.
+                return new Account[0];
             }
         }
     }
@@ -123,27 +113,18 @@ public class GoogleAccountManagerProxy extends ClassInvocationStub {
                         }
                     }
                     
-                    // No real accounts. When real GMS is installed, do NOT use mock accounts.
-                    if (isRealGmsInstalled()) {
-                        Slog.d(TAG, "GoogleAccountManager: Real GMS installed, returning empty accounts (no mock)");
-                        return new Account[0];
-                    }
-                    
-                    // Only mock for basic compatibility without real GMS
-                    if ("com.google".equals(accountType)) {
-                        Slog.d(TAG, "GoogleAccountManager: No real GMS, returning mock Google accounts");
-                        return createMockGoogleAccounts();
-                    }
+                    // No real accounts. Never return mock accounts — they cannot
+                    // be used for real sign-in and only confuse the app.
+                    Slog.d(TAG, "GoogleAccountManager: No real accounts of type " + accountType + ", returning empty");
+                    return new Account[0];
                 }
                 
                 return method.invoke(who, args);
                 
             } catch (Exception e) {
                 Slog.w(TAG, "GoogleAccountManager: GetAccountsByType error", e);
-                if (isRealGmsInstalled()) {
-                    return new Account[0];
-                }
-                return createMockGoogleAccounts();
+                // Always return empty instead of mock accounts
+                return new Account[0];
             }
         }
     }
@@ -157,7 +138,6 @@ public class GoogleAccountManagerProxy extends ClassInvocationStub {
                 return method.invoke(who, args);
             } catch (Exception e) {
                 Slog.w(TAG, "GoogleAccountManager: GetPassword error", e);
-                // Never return mock passwords — they don't work for real sign-in
                 return null;
             }
         }
@@ -172,7 +152,6 @@ public class GoogleAccountManagerProxy extends ClassInvocationStub {
                 return method.invoke(who, args);
             } catch (Exception e) {
                 Slog.w(TAG, "GoogleAccountManager: GetUserData error", e);
-                // Never return mock user data — it doesn't work for real sign-in
                 return null;
             }
         }
@@ -184,20 +163,15 @@ public class GoogleAccountManagerProxy extends ClassInvocationStub {
         protected Object hook(Object who, Method method, Object[] args) throws Throwable {
             try {
                 Slog.d(TAG, "GoogleAccountManager: Handling addAccount call");
-                return method.invoke(who, args);
+                Object result = method.invoke(who, args);
+                Slog.d(TAG, "GoogleAccountManager: addAccount returned: " + result);
+                return result;
             } catch (Exception e) {
                 Slog.w(TAG, "GoogleAccountManager: AddAccount error", e);
-                // When real GMS is installed, don't return mock addAccount result.
-                // Let the real GMS handle account addition flow.
-                if (isRealGmsInstalled()) {
-                    // Return null to signal failure — the app should use proper sign-in flow
-                    return null;
-                }
-                // Fallback only without real GMS
-                Bundle result = new Bundle();
-                result.putString("authAccount", "mock@gmail.com");
-                result.putString("accountType", "com.google");
-                return result;
+                // Never return mock addAccount result — mock@gmail.com cannot
+                // be used for real sign-in and pollutes the account state.
+                // Return null to signal failure so the app uses proper sign-in flow.
+                return null;
             }
         }
     }
@@ -225,7 +199,7 @@ public class GoogleAccountManagerProxy extends ClassInvocationStub {
                 return method.invoke(who, args);
             } catch (Exception e) {
                 Slog.w(TAG, "GoogleAccountManager: HasFeatures error", e);
-                return false;  // Don't claim features we don't actually have
+                return false;
             }
         }
     }
@@ -236,11 +210,27 @@ public class GoogleAccountManagerProxy extends ClassInvocationStub {
         protected Object hook(Object who, Method method, Object[] args) throws Throwable {
             try {
                 Slog.d(TAG, "GoogleAccountManager: Handling getAuthToken call");
-                return method.invoke(who, args);
+                Object result = method.invoke(who, args);
+                if (result != null && result instanceof Bundle) {
+                    Bundle bundle = (Bundle) result;
+                    String token = bundle.getString("authtoken");
+                    if (token != null) {
+                        Slog.d(TAG, "GoogleAccountManager: Got real auth token (length=" + token.length() + ")");
+                    } else {
+                        Slog.d(TAG, "GoogleAccountManager: getAuthToken returned bundle with no token");
+                    }
+                }
+                return result;
             } catch (Exception e) {
                 Slog.w(TAG, "GoogleAccountManager: GetAuthToken error", e);
-                // Never return mock auth tokens — they will be rejected by Google servers
-                // and make sign-in appear to succeed then fail immediately.
+                // Never return mock auth tokens — they will be rejected by Google servers.
+                // When real GMS is installed, re-throw so the caller sees the real error
+                // and can retry or show proper sign-in UI.
+                if (isRealGmsInstalled()) {
+                    Slog.d(TAG, "GoogleAccountManager: Real GMS installed, re-throwing getAuthToken error");
+                    throw e.getCause() != null ? e.getCause() : e;
+                }
+                // Without real GMS, return null (no token available)
                 return null;
             }
         }
@@ -269,7 +259,6 @@ public class GoogleAccountManagerProxy extends ClassInvocationStub {
                 return method.invoke(who, args);
             } catch (Exception e) {
                 Slog.w(TAG, "GoogleAccountManager: PeekAuthToken error", e);
-                // Never return mock tokens
                 return null;
             }
         }
@@ -312,7 +301,8 @@ public class GoogleAccountManagerProxy extends ClassInvocationStub {
                 return method.invoke(who, args);
             } catch (Exception e) {
                 Slog.w(TAG, "GoogleAccountManager: GetAuthenticatorTypes error", e);
-                return new String[]{"com.google"};
+                // Return empty array of correct type (AuthenticatorDescription[], not String[])
+                return new AuthenticatorDescription[0];
             }
         }
     }
@@ -326,26 +316,30 @@ public class GoogleAccountManagerProxy extends ClassInvocationStub {
                 return method.invoke(who, args);
             } catch (Exception e) {
                 Slog.w(TAG, "GoogleAccountManager: IsAccountPresent error", e);
-                // Don't claim an account is present when it's not
                 return false;
             }
         }
     }
 
-    
-    private static Account[] createMockGoogleAccounts() {
-        try {
-            List<Account> accounts = new ArrayList<>();
-            
-            Account primaryAccount = new Account("mock.user@gmail.com", "com.google");
-            accounts.add(primaryAccount);
-            
-            Slog.d(TAG, "GoogleAccountManager: Created " + accounts.size() + " mock Google accounts (fallback only)");
-            return accounts.toArray(new Account[0]);
-            
-        } catch (Exception e) {
-            Slog.e(TAG, "GoogleAccountManager: Failed to create mock accounts", e);
-            return new Account[0];
+    @ProxyMethod("blockingGetAuthToken")
+    public static class BlockingGetAuthToken extends MethodHook {
+        @Override
+        protected Object hook(Object who, Method method, Object[] args) throws Throwable {
+            try {
+                Slog.d(TAG, "GoogleAccountManager: Handling blockingGetAuthToken call");
+                Object result = method.invoke(who, args);
+                if (result != null) {
+                    Slog.d(TAG, "GoogleAccountManager: blockingGetAuthToken returned token (length=" + ((String)result).length() + ")");
+                }
+                return result;
+            } catch (Exception e) {
+                Slog.w(TAG, "GoogleAccountManager: blockingGetAuthToken error", e);
+                // Never return mock tokens
+                if (isRealGmsInstalled()) {
+                    throw e.getCause() != null ? e.getCause() : e;
+                }
+                return null;
+            }
         }
     }
 }
