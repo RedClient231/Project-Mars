@@ -7,6 +7,7 @@ on:
       - project-mars-newblackbox-base
       - feature/xapk-import
       - feature/full-resource-split-xapk
+      - feature/real-gms-playgames-support
 
 jobs:
   build:

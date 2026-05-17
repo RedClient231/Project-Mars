@@ -54,6 +54,20 @@ public class GmsProxy extends BinderInvocationStub {
         return false;
     }
 
+    /**
+     * Check if real GMS is installed in the current virtual user.
+     * When real GMS is present, we should NOT use mock/fake responses
+     * because they interfere with the real sign-in flow.
+     */
+    private static boolean isRealGmsInstalled() {
+        try {
+            int userId = BlackBoxCore.getUserId();
+            return BlackBoxCore.get().isInstalled("com.google.android.gms", userId);
+        } catch (Exception e) {
+            return false;
+        }
+    }
+
     
     @ProxyMethod("getService")
     public static class GetService extends MethodHook {
@@ -102,9 +116,17 @@ public class GmsProxy extends BinderInvocationStub {
                 Slog.d(TAG, "GmsProxy: Handling authenticate call");
                 return method.invoke(who, args);
             } catch (Exception e) {
-                Slog.w(TAG, "GmsProxy: Authentication error, returning success", e);
-                
-                return createMockAuthResult();
+                Slog.w(TAG, "GmsProxy: Authentication error", e);
+                // Do NOT return mock auth result when real GMS is installed.
+                // Let the error propagate so the caller can handle it properly
+                // (e.g. show real sign-in UI or report SERVICE_MISSING).
+                // Only return empty Bundle as fallback when no real GMS is available.
+                if (!isRealGmsInstalled()) {
+                    Slog.d(TAG, "GmsProxy: No real GMS installed, returning empty fallback bundle");
+                    return createEmptyBundle();
+                }
+                // With real GMS installed, re-throw so the app sees the real error
+                throw e.getCause() != null ? e.getCause() : e;
             }
         }
     }
@@ -133,8 +155,15 @@ public class GmsProxy extends BinderInvocationStub {
                 Slog.d(TAG, "GmsProxy: Handling getToken call");
                 return method.invoke(who, args);
             } catch (Exception e) {
-                Slog.w(TAG, "GmsProxy: GetToken error, returning mock token", e);
-                return "mock_gms_token_" + System.currentTimeMillis();
+                Slog.w(TAG, "GmsProxy: GetToken error", e);
+                // Do NOT return mock token. A fake token will cause the server
+                // to reject the request and make sign-in appear to succeed then fail.
+                // When real GMS is installed, let the error propagate.
+                if (!isRealGmsInstalled()) {
+                    Slog.d(TAG, "GmsProxy: No real GMS, returning null token instead of mock");
+                    return null;
+                }
+                throw e.getCause() != null ? e.getCause() : e;
             }
         }
     }
@@ -170,13 +199,12 @@ public class GmsProxy extends BinderInvocationStub {
     }
 
     
-    private static Object createMockAuthResult() {
+    private static Object createEmptyBundle() {
         try {
-            
             Class<?> bundleClass = Class.forName("android.os.Bundle");
             return bundleClass.newInstance();
         } catch (Exception e) {
-            Slog.w(TAG, "Failed to create mock auth result", e);
+            Slog.w(TAG, "Failed to create empty bundle", e);
             return null;
         }
     }

@@ -1140,12 +1140,59 @@ public class BlackBoxCore extends ClientConfiguration {
             if (packageName.equals(getHostPkg())) {
                 return new InstallResult().installError("Cannot clone BlackBox app from within BlackBox. This would create infinite recursion and is not allowed for security reasons.");
             }
-            
+
             PackageInfo packageInfo = getPackageManager().getPackageInfo(packageName, 0);
-            return getBPackageManager().installPackageAsUser(packageInfo.applicationInfo.sourceDir, InstallOption.installBySystem(), userId);
+            ApplicationInfo ai = packageInfo.applicationInfo;
+            String basePath = ai.sourceDir;
+            String[] splitPaths = ai.splitSourceDirs;
+
+            // If the host package has no splits, use the fast system-install path
+            if (splitPaths == null || splitPaths.length == 0) {
+                return getBPackageManager().installPackageAsUser(basePath, InstallOption.installBySystem(), userId);
+            }
+
+            // Host package has split APKs (common for GMS, Play Store, Play Games on modern Android).
+            // Copy base + all splits to a temp directory, then install using storage mode.
+            // BPackageManagerService will detect sibling split APKs in the same directory.
+            Slog.d(TAG, "Host package " + packageName + " has " + splitPaths.length
+                    + " split APKs — using split-aware install path");
+
+            File tempDir = new File(getContext().getCacheDir(),
+                    "system-install-" + packageName + "-" + java.util.UUID.randomUUID());
+            try {
+                if (!tempDir.mkdirs()) {
+                    return new InstallResult().installError("Failed to create temp install directory");
+                }
+
+                // Copy base APK
+                File baseApk = new File(tempDir, "base.apk");
+                FileUtils.copyFile(new File(basePath), baseApk);
+
+                // Copy split APKs with safe filenames preserving the original split name
+                for (String splitPath : splitPaths) {
+                    if (splitPath == null) continue;
+                    File splitFile = new File(splitPath);
+                    // Use the original filename (e.g. split_config.en.apk, config.arm64_v8a.apk)
+                    File destFile = new File(tempDir, splitFile.getName());
+                    FileUtils.copyFile(splitFile, destFile);
+                    Slog.d(TAG, "Copied split: " + splitFile.getName() + " (" + splitFile.length() + " bytes)");
+                }
+
+                // Install from the temp directory — sibling splits will be detected
+                InstallResult result = getBPackageManager().installPackageAsUser(
+                        baseApk.getAbsolutePath(), InstallOption.installByStorage().skipAbiCheck(), userId);
+                return result;
+            } finally {
+                // Clean up temp directory after install completes.
+                // CopyExecutor has already copied base + splits into virtual storage.
+                FileUtils.deleteDir(tempDir);
+            }
         } catch (PackageManager.NameNotFoundException e) {
             e.printStackTrace();
             return new InstallResult().installError(e.getMessage());
+        } catch (Exception e) {
+            Slog.e(TAG, "Split-aware install failed for " + packageName, e);
+            return new InstallResult().installError("Split install error: " + e.getMessage());
         }
     }
 

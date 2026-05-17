@@ -133,11 +133,10 @@ public class IPackageManagerProxy extends BinderInvocationStub {
             String packageName = (String) args[0];
             int flags = MethodParameterUtils.toInt(args[1]);
             
-            
-            if ("com.android.vending".equals(packageName)) {
-                return createFakeGooglePlayServicesPackageInfo();
-            }
-            
+            // Always check the virtual package manager first.
+            // This is critical for Google packages (GMS, GSF, Vending, Play Games)
+            // that are installed into the virtual user — we must return their
+            // REAL package info, not fake/stub info.
             PackageInfo packageInfo = BlackBoxCore.getBPackageManager().getPackageInfo(packageName, flags, BlackBoxCore.getUserId());
             if (packageInfo != null) {
                 
@@ -154,27 +153,30 @@ public class IPackageManagerProxy extends BinderInvocationStub {
                 }
                 return packageInfo;
             }
+
+            // If the virtual package manager doesn't have this package,
+            // and it's a Google package, do NOT return fake info.
+            // Fake package info (especially for com.android.vending) causes
+            // GoogleApiAvailability to report wrong results and breaks sign-in.
+            // Instead, let the call fall through to the real system package manager
+            // or return null if the package is not available.
+            if ("com.android.vending".equals(packageName)
+                    || "com.google.android.gms".equals(packageName)
+                    || "com.google.android.gsf".equals(packageName)
+                    || "com.google.android.play.games".equals(packageName)) {
+                Slog.d(TAG, "GetPackageInfo: Google package " + packageName
+                        + " not installed in virtual user — returning null instead of fake info");
+                // Try the real system package manager as fallback
+                if (AppSystemEnv.isOpenPackage(packageName)) {
+                    return method.invoke(who, args);
+                }
+                return null;
+            }
+            
             if (AppSystemEnv.isOpenPackage(packageName)) {
                 return method.invoke(who, args);
             }
             return null;
-        }
-        
-        private PackageInfo createFakeGooglePlayServicesPackageInfo() {
-            PackageInfo packageInfo = new PackageInfo();
-            packageInfo.packageName = "com.android.vending";
-            packageInfo.versionName = "33.8.16-21";
-            packageInfo.versionCode = 83381621;
-            
-            ApplicationInfo appInfo = new ApplicationInfo();
-            appInfo.packageName = "com.android.vending";
-            appInfo.name = "Google Play Store";
-            appInfo.flags = ApplicationInfo.FLAG_SYSTEM;
-            appInfo.uid = 10001; 
-            packageInfo.applicationInfo = appInfo;
-            
-            Slog.d(TAG, "GetPackageInfo: Providing fake Google Play Services info");
-            return packageInfo;
         }
     }
 
@@ -368,8 +370,17 @@ public class IPackageManagerProxy extends BinderInvocationStub {
     public static class GetInstallerPackageName extends MethodHook {
         @Override
         protected Object hook(Object who, Method method, Object[] args) throws Throwable {
-            
-            return "com.android.vending";
+            // Return the real installer from the virtual package manager,
+            // or fall through to the system package manager.
+            // Only claim "com.android.vending" if the package was actually
+            // installed from Play Store — don't fake it.
+            try {
+                return method.invoke(who, args);
+            } catch (Exception e) {
+                // If we can't determine the real installer, return null
+                // rather than faking "com.android.vending"
+                return null;
+            }
         }
     }
 
